@@ -107,6 +107,7 @@ export interface Hud {
   /** Elapsed match time in seconds (for the shift timeline). */
   matchTime: number;
   firstInactive: Alliance | null;
+  autoTeleopGap: number;
   results: null | {
     winner: Alliance | 'tie';
     rp: Record<Alliance, RankingPoints>;

@@ -120,7 +120,7 @@ export class Game {
     this.field.stageFuel();
     this.results = null;
     for (const r of this.allRobots()) {
-      r.stored.length = 0; // stageFuel() already reset every ball
+      r.clearHopper(); // stageFuel() already reset every ball
       r.fuel = this.field.fuel;
       this.placeRobot(r);
       r.stats.shots = r.stats.scored = r.stats.intaked = 0;
@@ -416,6 +416,7 @@ export class Game {
       banner: this.banner && this.banner.until > this.time ? this.banner.text : null,
       matchTime: this.matchElapsed(),
       firstInactive: this.match.firstInactive,
+      autoTeleopGap: this.match.autoTeleopGap,
       results: this.results,
     };
     useStore.getState().setHud(hud);

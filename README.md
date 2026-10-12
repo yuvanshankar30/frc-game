@@ -15,21 +15,22 @@ pnpm build      # typecheck + production build into dist/
 
 ## Modes
 
-- **Play Match:** a full 2:40 match:
+- **Match:** a full 2:40 match:
   - AUTO (20s), then TRANSITION (10s).
   - Four 25s SHIFTS with alternating active HUBs. The alliance that scored more in AUTO starts inactive.
   - END GAME (30s).
-  - Results with ranking points (ENERGIZED, SUPERCHARGED, TRAVERSAL).
-  - Optional bots fill the other five slots for a 3v3.
-- **Free Practice:** no clock, both HUBs always active.
-- **Local 2-Player:** split screen with keyboard + keyboard, keyboard + gamepad, or two gamepads.
+  - Results with ranking points (ENERGIZED, SUPERCHARGED, TRAVERSAL) and per-robot stats.
+- **Practice:** no clock, both HUBs always active.
+- **Multiplayer:** local split screen with keyboard + keyboard, keyboard + gamepad, or two gamepads. Online multiplayer needs a game server and is planned.
+
+FUEL inside a robot is real physics. Each robot's hopper has walls that only carried FUEL collides with. Intaken balls arc in over the bumper, slosh around as you drive, can spill out on hard hits, and the shooter feeds from the ball nearest its feeder.
 
 ## Controls (default, all rebindable in Settings)
 
 | Action | Keyboard | Xbox pad |
 |---|---|---|
 | Drive / strafe | `W A S D` | left stick |
-| Rotate | `Q E` / `← →` | right stick |
+| Rotate | `J L` (also `Q E`) | right stick |
 | Intake (hold) | `Shift` / `J` | LT / LB |
 | Shoot (hold) | `Space` | RT / RB |
 | Eject | `X` | B |
@@ -39,6 +40,8 @@ pnpm build      # typecheck + production build into dist/
 | Toggle aim assist | `T` | D-pad down |
 | Reset robot | `R` | Back |
 | Pause | `Esc` / `P` | Start |
+
+Rotation feel is adjustable in Settings: rotation speed, a keyboard ramp, and heading hold, which keeps swerve and mecanum robots on line when you aren't turning. Player 2 on the same keyboard drives with the arrow keys and rotates with `,` and `.`.
 
 Cameras: third person, driver station, first person and overhead. In third person, controls follow the camera by default; switch to driver-station field-oriented in Settings.
 
@@ -56,12 +59,12 @@ Stats come from team binders, reveal threads and CAD releases. Each robot file l
 
 | Team | Robot | Architecture | Capacity | Rate | Climb |
 |---|---|---|---|---|---|
-| 4414 HighTide | RIPCURRENT | Swerve, sliding box intake + extending hopper, Dye Rotor, 3in flywheel turret with SOTM | 88 | ~14 BPS | none |
-| 971 Spartan Robotics | Mixtape | Swerve, dual independent turrets, mecanum-column spindexer, SOTM | ~50 | ~20 BPS | L1 |
-| 2910 Jack in the Bot | Re•Blitz | Swerve (MK5n R1), sliding intake + hopper, 4-wide rear drum + hood | 58 | 25 BPS | none |
-| 1690 Orbit | KEPLER | Swerve, spindexer, compact turret with SOTM, intakes while shooting | ~52 | ~13 BPS | L1 |
-| 254 The Cheesy Poofs | Overload | Swerve (MK5n R1), belt floor, full-width rear drum + hood | ~60 | ~24 BPS | none |
-| 1678 Citrus Circuits | Limestone | Swerve, roller floor + ball tunnel, full-width grip-tape drum | ~70 | ~26 BPS | L1 |
+| 4414 HighTide | RIPCURRENT | Structural-bumper hopper walls, latching rack intake + extending net hopper, Dye Rotor, 3in flywheel turret with SOTM (binder CAD) | 88 | ~14 BPS | none |
+| 971 Spartan Robotics | Mixtape | Clear front hopper, twin independent turrets, mecanum spindexer, pivot ground intake (released code) | ~36 | ~20 BPS | none |
+| 2910 Jack in the Bot | Re•Blitz | Pivot intake 0–114°, extending hopper, 4-lane rear drum, hood 0–37° (released code) | 58 | 25 BPS | none |
+| 1690 Orbit | KEPLER | Clear hopper, spindexer, compact turret with SOTM | ~48 | ~13 BPS | L1 |
+| 254 The Cheesy Poofs | Overload | Smoked "blue box" hopper, timing-belt floor, full-width rear drum + hood | ~50 | ~24 BPS | none |
+| 1678 Citrus Circuits | Limestone | Slapdown intake, angled roller floor, ball tunnel, 3.5in grip-tape drum, hood 17.5–52.5°, climber-lifted hopper roof (design write-up + code) | ~55 | ~26 BPS | L1 |
 
 ## Custom robots from CAD
 
@@ -126,7 +129,6 @@ The browser tests need the dev server running on :5273 (or `URL=...`) and use yo
 | Script | What it checks |
 |---|---|
 | `node scripts/robot-suite.mjs <dir>` | Every built-in robot: shooting from 2, 3.5 and 5m, intake, BUMP and TRENCH traversal, climbing |
-| `node scripts/match-test.mjs <dir>` | A fast-forwarded 3v3 bot match: phases, scores, results |
 | `node scripts/editor-test.mjs <dir>` | STL → editor → joint → save → test drive |
 | `node scripts/step-test.mjs <file.step> <dir>` | STEP import through the OpenCascade worker |
 | `node scripts/package-test.mjs <dir>` | `.frcbot` export → re-import → play, with joints intact |

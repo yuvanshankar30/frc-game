@@ -5,6 +5,7 @@ import { RobotPreview } from '../render/preview';
 import { RobotStats, RobotThumb, robotChips } from './RobotSelect';
 import { packFrcbot, unpackFrcbot, downloadBlob } from '../cad/frcbot';
 import { saveCustomRobot, deleteCustomRobot, getCustomRobot } from '../cad/storage';
+import { invalidateThumb } from '../render/thumbs';
 import { exportGlb } from '../cad/loaders';
 import { BUILTINS, buildBuiltin, type RobotEntry } from '../robots/registry';
 import { checkRules } from '../robot/schema';
@@ -77,6 +78,7 @@ export function Garage() {
 
   const doDelete = async (r: RobotEntry) => {
     await deleteCustomRobot(r.id);
+    invalidateThumb(r.id);
     setConfirmDelete(null);
     setSel(null);
     await refresh();

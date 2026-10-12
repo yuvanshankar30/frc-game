@@ -40,7 +40,7 @@ export const r1690: BuiltinRobot = {
     storage: {
       capacity: 48,
       preload: 8,
-      box: { center: [inches(2.5), inches(10.6), 0], size: [inches(20), inches(15.5), W - inches(2)] },
+      box: { center: [inches(1.5), inches(10.6), 0], size: [inches(22), inches(15.5), W - inches(2)] },
     },
     shooter: {
       barrels: [{ exit: [0, 0, 0] }],

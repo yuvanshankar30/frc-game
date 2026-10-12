@@ -5,6 +5,23 @@ import { robotVisual } from './preview';
 /** Renders small transparent PNG thumbnails of robots (cached per id) with one shared renderer. */
 let renderer: THREE.WebGLRenderer | null = null;
 const cache = new Map<string, Promise<string>>();
+/** Thumbnails render one at a time so opening a robot list doesn't stall the UI. */
+let queue: Promise<unknown> = Promise.resolve();
+
+/** Drop cached thumbnails for a robot (after it's edited/saved). */
+export function invalidateThumb(id: string) {
+  for (const k of [...cache.keys()]) if (k.startsWith(`${id}|`)) cache.delete(k);
+}
+
+function disposeScene(root: THREE.Object3D) {
+  root.traverse((o) => {
+    const m = o as THREE.Mesh;
+    if (m.isMesh) {
+      m.geometry?.dispose();
+      for (const mat of Array.isArray(m.material) ? m.material : [m.material]) mat?.dispose();
+    }
+  });
+}
 
 function getRenderer() {
   if (!renderer) {
@@ -21,7 +38,8 @@ export function robotThumb(id: string, alliance: 'blue' | 'red' = 'blue'): Promi
   const key = `${id}|${alliance}`;
   let p = cache.get(key);
   if (!p) {
-    p = (async () => {
+    const job = async () => {
+      await new Promise((r) => setTimeout(r, 16)); // yield a frame between thumbnails
       const { def, model } = await loadRobot(id);
       const scene = new THREE.Scene();
       scene.add(new THREE.HemisphereLight(0xeef3ff, 0x30343e, 2.2));
@@ -42,8 +60,14 @@ export function robotThumb(id: string, alliance: 'blue' | 'red' = 'blue'): Promi
       const r = getRenderer();
       r.setClearColor(0x000000, 0);
       r.render(scene, cam);
-      return r.domElement.toDataURL('image/png');
-    })();
+      const url = r.domElement.toDataURL('image/png');
+      disposeScene(scene);
+      return url;
+    };
+    p = queue.then(job, job);
+    queue = p.catch(() => undefined);
+    // Don't keep failures cached.
+    p.catch(() => cache.delete(key));
     cache.set(key, p);
   }
   return p;

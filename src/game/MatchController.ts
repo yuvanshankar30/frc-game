@@ -127,11 +127,21 @@ export class MatchController {
   untilHubChange(a: Alliance): number {
     const info = this.info();
     const now = this.isHubActive(a);
-    if (this.phase === 'auto') return now ? info.phaseRemaining + this.autoTeleopGap + PERIODS.transition : Infinity;
-    if (this.phase === 'pause') return this.autoTeleopGap - this.t + (now ? 0 : 0);
-    if (this.phase === 'transition') return this.firstInactive === a ? info.phaseRemaining : info.phaseRemaining + PERIODS.shift;
-    if (this.phase === 'shift') return info.phaseRemaining;
-    return Infinity;
+    switch (this.phase) {
+      case 'auto':
+        // Both HUBs switch off for the AUTO→TELEOP pause (or the transition starts right away).
+        return this.autoTeleopGap > 0 ? info.phaseRemaining : Infinity;
+      case 'pause':
+        return info.phaseRemaining; // both come back on for TRANSITION
+      case 'transition':
+        return this.firstInactive === a ? info.phaseRemaining : info.phaseRemaining + PERIODS.shift;
+      case 'shift':
+        // After SHIFT 4 both HUBs are active for END GAME: only the inactive one flips.
+        if (this.shift === PERIODS.shiftCount) return now ? Infinity : info.phaseRemaining;
+        return info.phaseRemaining;
+      default:
+        return Infinity;
+    }
   }
 
   /** Free-practice style scoring outside a match is handled by the caller. */

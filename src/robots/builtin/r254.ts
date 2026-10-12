@@ -38,7 +38,7 @@ export const r254: BuiltinRobot = {
       requiresDeploy: true,
     },
     storage: {
-      capacity: 52,
+      capacity: 50,
       preload: 8,
       box: { center: [inches(2.5), inches(11.3), 0], size: [inches(21), inches(17.6), W - inches(1.8)] },
     },

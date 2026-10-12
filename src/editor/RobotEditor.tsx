@@ -5,6 +5,7 @@ import { EditorViewport, JOINT_COLORS, type GizmoTarget } from './EditorViewport
 import { importCad, loadGlb, exportGlb, type ImportResult } from '../cad/loaders';
 import { robotSchema, checkRules, JOINT_DRIVERS, type RobotDefinition, type JointDef } from '../robot/schema';
 import { saveCustomRobot, getCustomRobot } from '../cad/storage';
+import { invalidateThumb } from '../render/thumbs';
 import { packFrcbot, downloadBlob, unpackFrcbot } from '../cad/frcbot';
 import { BUILTINS, buildBuiltin } from '../robots/registry';
 import { toast } from '../ui/toast';
@@ -309,6 +310,7 @@ export function RobotEditor() {
       const glb = await exportGlb(raw.current);
       const parsed = robotSchema.parse({ ...def, source: 'package' });
       await saveCustomRobot(parsed, glb);
+      invalidateThumb(parsed.id);
       setDirty(false);
       setEditingRobot(parsed.id);
       toast(`Saved ${parsed.name}`);

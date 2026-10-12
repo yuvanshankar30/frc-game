@@ -13,7 +13,7 @@ import { inches } from '../../util/units';
  *    horizontal roller pushing down into the spindexing pan, kickers into each turret
  *  - Pivoting ground intake (GroundPivot + GroundRollers)
  *  - Shot solver uses robot pose AND velocity (SOTM)
- *  - Capacity / BPS: estimates (~40 FUEL in the modeled box, ~20 BPS from both turrets)
+ *  - Capacity / BPS: estimates (~36 FUEL in the modeled box, ~20 BPS from both turrets)
  */
 const L = inches(24.5);
 const W = inches(29.5);
@@ -42,9 +42,9 @@ export const r971: BuiltinRobot = {
       requiresDeploy: true,
     },
     storage: {
-      capacity: 40,
+      capacity: 36,
       preload: 8,
-      box: { center: [(BOX_X0 + BOX_X1) / 2 + inches(0.3), inches(11.7), 0], size: [BOX_X1 - BOX_X0 - inches(1), inches(16.5), W - inches(2)] },
+      box: { center: [(BOX_X0 + BOX_X1) / 2 + inches(0.3), inches(12.2), 0], size: [BOX_X1 - BOX_X0 - inches(1), inches(17.5), W - inches(2)] },
     },
     shooter: {
       barrels: [{ exit: [0, 0, 0] }, { exit: [0, 0, 0] }],

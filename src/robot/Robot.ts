@@ -35,8 +35,6 @@ export interface RobotContext {
   auto: boolean;
   /** Aim assist (turret tracking + auto-rotate for fixed shooters + SOTM lead). */
   assist: boolean;
-  /** Infinite storage refill for practice. */
-  infiniteFuel?: boolean;
   /** Hold heading when not rotating (swerve / mecanum). */
   headingHold?: boolean;
 }
@@ -303,6 +301,12 @@ export class Robot {
   /** FUEL in flight from the intake into the hopper → time since capture. */
   private entering = new Map<number, number>();
 
+  /** Forget everything carried (the field re-stages FUEL on reset). */
+  clearHopper() {
+    this.stored.length = 0;
+    this.entering.clear();
+  }
+
   /** Balls that bounced out of the hopper become loose FUEL on the field. */
   private checkSpills(fuel: FuelSystem, dt: number) {
     const { center: c, size: s } = this.hopper;
@@ -313,12 +317,13 @@ export class Robot {
       const inside = Math.abs(lp.x - c.x) < s.x / 2 - r && Math.abs(lp.y - c.y) < s.y / 2 - r && Math.abs(lp.z - c.z) < s.z / 2 - r;
       if (inside || t > 0.6 || fuel.state[i] !== 'stored') {
         if (fuel.state[i] === 'stored') {
-          if (!inside) {
-            // Didn't make it in cleanly: drop it at the entry point.
-            const w = this.toWorld(this.entryPoint(lp.z), new THREE.Vector3());
-            fuel.bodies[i].setTranslation(w, true);
+          if (inside) fuel.colliders[i].setCollisionGroups(groups(GROUP.STORED, GROUP.HOPPER | GROUP.STORED));
+          else {
+            // No room / didn't make it in: it bounces back out onto the field.
+            const k = this.stored.indexOf(i);
+            if (k >= 0) this.stored.splice(k, 1);
+            fuel.place(i, fuel.position(i), fuel.velocity(i));
           }
-          fuel.colliders[i].setCollisionGroups(groups(GROUP.STORED, GROUP.HOPPER | GROUP.STORED));
         }
         this.entering.delete(i);
       } else this.entering.set(i, t + dt);
@@ -482,7 +487,6 @@ export class Robot {
     this.spin = approach(this.spin, wantSpin ? 1 : 0, dt * (wantSpin ? 3.5 : 1.2));
 
     this.fuel = ctx.field.fuel;
-    if (ctx.infiniteFuel && this.stored.length < (def.storage.capacity || 0)) this.preload(ctx.field.fuel, 1);
     this.checkSpills(ctx.field.fuel, dt);
 
     // Aim (turret + hood + speed).
@@ -541,7 +545,16 @@ export class Robot {
         break;
       case 'wheel': {
         const v = Math.hypot(this.speeds.vx, this.speeds.vz) + Math.abs(this.speeds.omega) * 0.3;
-        jt.target = clamp(v / Math.max(0.1, this.def.drivetrain.maxSpeed), 0, 1) * Math.sign(this.speeds.vx || 1);
+        let dir = Math.sign(this.speeds.vx || 1);
+        // Swerve wheels: roll forward relative to their module; flip when the module is turned around.
+        const steer = d.parent ? this.assembly.joints.get(d.parent) : undefined;
+        if (steer && steer.def.driver === 'steer') {
+          this.steerJoints ??= [...this.assembly.joints.values()].filter((j) => j.def.driver === 'steer');
+          const k = this.steerJoints.indexOf(steer);
+          const moduleAngle = this.swerveAngles[k] ?? 0;
+          dir = Math.cos(moduleAngle - steer.value * DEG) >= 0 ? 1 : -1;
+        }
+        jt.target = clamp(v / Math.max(0.1, this.def.drivetrain.maxSpeed), 0, 1) * dir;
         break;
       }
       case 'steer': {

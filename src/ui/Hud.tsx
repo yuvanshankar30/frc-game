@@ -31,7 +31,7 @@ export function ScoreBar({ hud }: { hud: Hud }) {
     return (
       <div className={`sb-side sb-${a}`}>
         <div className="sb-teams">
-          {teams.length ? teams.map((t) => <span key={t}>{t}</span>) : <span className="sb-empty">—</span>}
+          {teams.length ? teams.map((t, i) => <span key={i}>{t}</span>) : <span className="sb-empty">—</span>}
         </div>
         <div className="sb-score">{s.total}</div>
         <div className={`sb-hub ${active ? 'on' : ''}`} title={active ? 'HUB active' : 'HUB inactive'}>
@@ -66,7 +66,7 @@ function HubGlyph({ on }: { on: boolean }) {
 
 /** Thin strip under the score bar: AUTO, TRANSITION, four shifts, END GAME with the active HUB per segment. */
 function ShiftTimeline({ hud }: { hud: Hud }) {
-  const gap = 3; // AUTO→TELEOP delay is shown as a hairline
+  const gap = hud.autoTeleopGap; // AUTO→TELEOP delay
   const segs: { label: string; len: number; active: 'both' | Alliance | 'none' }[] = [
     { label: 'AUTO', len: PERIODS.auto, active: 'both' },
     { label: '', len: gap, active: 'none' },
