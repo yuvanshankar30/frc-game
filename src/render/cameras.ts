@@ -1,0 +1,113 @@
+import * as THREE from 'three';
+import type { Robot } from '../robot/Robot';
+import type { Alliance } from '../game/scoring';
+import { FIELD } from '../field/rebuilt/dims';
+
+export type CameraMode = 'chase' | 'driver' | 'fpv' | 'overhead';
+export const CAMERA_MODES: CameraMode[] = ['chase', 'driver', 'fpv', 'overhead'];
+export const CAMERA_LABELS: Record<CameraMode, string> = {
+  chase: 'Third person',
+  driver: 'Driver station',
+  fpv: 'First person',
+  overhead: 'Overhead',
+};
+
+/**
+ * One player's camera. Also defines the "reference yaw" the driver's stick input is relative to.
+ */
+export class CameraRig {
+  readonly camera: THREE.PerspectiveCamera;
+  mode: CameraMode = 'chase';
+  private pos = new THREE.Vector3();
+  private look = new THREE.Vector3();
+  private initialized = false;
+  /** Smoothed yaw used for chase-camera-relative driving. */
+  private chaseYaw = 0;
+  /** Which driver station slot (0..2) the driver view uses. */
+  station = 1;
+
+  constructor(
+    readonly alliance: Alliance,
+    fov = 56,
+  ) {
+    this.camera = new THREE.PerspectiveCamera(fov, 1, 0.05, 200);
+  }
+
+  /** Yaw of "forward" for the driver's controls. */
+  referenceYaw(robot: Robot, driveFrame: 'camera' | 'driver-station'): number {
+    const dsYaw = this.alliance === 'blue' ? 0 : Math.PI;
+    if (this.mode === 'fpv') return robot.yaw;
+    if (driveFrame === 'driver-station' || this.mode === 'driver' || this.mode === 'overhead') return dsYaw;
+    return this.chaseYaw;
+  }
+
+  setMode(m: CameraMode) {
+    this.mode = m;
+    this.initialized = false;
+  }
+
+  cycle() {
+    const i = CAMERA_MODES.indexOf(this.mode);
+    this.setMode(CAMERA_MODES[(i + 1) % CAMERA_MODES.length]);
+  }
+
+  update(robot: Robot, dt: number) {
+    const p = robot.visual.position;
+    const yaw = robot.yaw;
+    const desiredPos = new THREE.Vector3();
+    const desiredLook = new THREE.Vector3();
+    let snap = !this.initialized;
+    const sign = this.alliance === 'blue' ? -1 : 1;
+    switch (this.mode) {
+      case 'chase': {
+        // Trail behind the robot's heading, slowly.
+        const k = 1 - Math.exp(-dt * 2.2);
+        let d = yaw - this.chaseYaw;
+        d = Math.atan2(Math.sin(d), Math.cos(d));
+        this.chaseYaw += snap ? d : d * k;
+        const back = new THREE.Vector3(-Math.cos(this.chaseYaw), 0, Math.sin(this.chaseYaw));
+        desiredPos.copy(p).addScaledVector(back, 2.6).add(new THREE.Vector3(0, 1.55, 0));
+        desiredLook.copy(p).addScaledVector(back, -1.6).add(new THREE.Vector3(0, 0.35, 0));
+        break;
+      }
+      case 'driver': {
+        // Standing behind the alliance wall at a station, watching the robot.
+        const zs = [-2.2, 0, 2.2][this.station] * -sign;
+        desiredPos.set(sign * (FIELD.length / 2 + 0.9), 1.75, zs);
+        desiredLook.set(p.x, 0.3, p.z);
+        snap = snap || false;
+        break;
+      }
+      case 'fpv': {
+        const fwd = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
+        const h = robot.def.frame.height + 0.12;
+        desiredPos.copy(p).addScaledVector(fwd, robot.halfLength * 0.2).add(new THREE.Vector3(0, h, 0));
+        desiredLook.copy(desiredPos).addScaledVector(fwd, 5).add(new THREE.Vector3(0, -0.9, 0));
+        snap = true;
+        break;
+      }
+      case 'overhead': {
+        desiredPos.set(sign * 2.5, 13, 0);
+        desiredLook.set(sign * 0.6, 0, 0);
+        break;
+      }
+    }
+    if (snap) {
+      this.pos.copy(desiredPos);
+      this.look.copy(desiredLook);
+      this.initialized = true;
+    } else {
+      const kp = 1 - Math.exp(-dt * (this.mode === 'driver' ? 20 : 8));
+      const kl = 1 - Math.exp(-dt * (this.mode === 'driver' ? 6 : 14));
+      this.pos.lerp(desiredPos, kp);
+      this.look.lerp(desiredLook, kl);
+    }
+    this.camera.position.copy(this.pos);
+    this.camera.lookAt(this.look);
+  }
+
+  setAspect(a: number) {
+    this.camera.aspect = a;
+    this.camera.updateProjectionMatrix();
+  }
+}
