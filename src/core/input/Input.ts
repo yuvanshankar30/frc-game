@@ -18,6 +18,8 @@ const emptyActions = () => Object.fromEntries(ACTIONS.map((a) => [a, false])) as
 /** Tracks raw keyboard state globally. */
 class KeyboardState {
   down = new Set<string>();
+  /** Number of (non-repeat) presses per key code, so taps shorter than a frame aren't lost. */
+  presses = new Map<string, number>();
   private attached = false;
 
   attach() {
@@ -26,10 +28,17 @@ class KeyboardState {
     window.addEventListener('keydown', (e) => {
       if (isTyping(e)) return;
       this.down.add(e.code);
+      if (!e.repeat) this.presses.set(e.code, (this.presses.get(e.code) ?? 0) + 1);
       if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab'].includes(e.code)) e.preventDefault();
     });
     window.addEventListener('keyup', (e) => this.down.delete(e.code));
     window.addEventListener('blur', () => this.down.clear());
+  }
+
+  pressCount(codes: string[]) {
+    let n = 0;
+    for (const c of codes) n += this.presses.get(c) ?? 0;
+    return n;
   }
 
   any(codes: string[]) {
@@ -50,6 +59,7 @@ export type DeviceSpec = { kind: 'keyboard'; bindings: KeyboardBindings } | { ki
 /** Reads one driver's controls from a keyboard binding set or a gamepad. */
 export class DriverInput {
   private prev = emptyActions();
+  private seenPresses = new Map<Action, number>();
   constructor(public device: DeviceSpec) {
     keyboard.attach();
   }
@@ -82,6 +92,15 @@ export class DriverInput {
     }
     const pressed = emptyActions();
     for (const a of ACTIONS) pressed[a] = held[a] && !this.prev[a];
+    if (d.kind === 'keyboard') {
+      // Catch taps that went down and up between two frames.
+      for (const a of ACTIONS) {
+        const n = keyboard.pressCount(d.bindings.actions[a]);
+        const seen = this.seenPresses.get(a);
+        if (seen !== undefined && n > seen) pressed[a] = true;
+        this.seenPresses.set(a, n);
+      }
+    }
     this.prev = held;
     return { x, z, rot, held, pressed };
   }

@@ -123,6 +123,17 @@ export class MatchController {
     }
   }
 
+  /** Seconds until alliance `a`'s HUB next changes active state (Infinity if it won't). */
+  untilHubChange(a: Alliance): number {
+    const info = this.info();
+    const now = this.isHubActive(a);
+    if (this.phase === 'auto') return now ? info.phaseRemaining + this.autoTeleopGap + PERIODS.transition : Infinity;
+    if (this.phase === 'pause') return this.autoTeleopGap - this.t + (now ? 0 : 0);
+    if (this.phase === 'transition') return this.firstInactive === a ? info.phaseRemaining : info.phaseRemaining + PERIODS.shift;
+    if (this.phase === 'shift') return info.phaseRemaining;
+    return Infinity;
+  }
+
   /** Free-practice style scoring outside a match is handled by the caller. */
   get running() {
     return this.phase !== 'pre' && this.phase !== 'post';

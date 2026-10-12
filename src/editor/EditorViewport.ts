@@ -142,7 +142,7 @@ export class EditorViewport {
         const mat = (Array.isArray(m.material) ? m.material : [m.material]).map((x) => {
           const c = (x as THREE.MeshStandardMaterial).clone();
           c.transparent = true;
-          c.opacity = 0.55;
+          c.opacity = 0.3;
           return c;
         });
         m.material = mat;

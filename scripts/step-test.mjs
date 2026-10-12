@@ -1,0 +1,21 @@
+// Imports a STEP assembly through the Robot Editor (OpenCascade worker) and screenshots the result.
+import { chromium } from 'playwright-core';
+const [file, out] = process.argv.slice(2);
+const browser = await chromium.launch({ channel: 'chrome', headless: true });
+const page = await browser.newPage({ viewport: { width: 1440, height: 860 } });
+const errors = [];
+page.on('pageerror', (e) => errors.push(e.message));
+page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
+await page.goto(process.env.URL ?? 'http://localhost:5273/');
+await page.waitForTimeout(1200);
+await page.getByText('Robot Editor').first().click();
+await page.waitForTimeout(600);
+const t0 = Date.now();
+await page.setInputFiles('input[type=file]', file);
+await page.waitForFunction(() => document.querySelectorAll('.tree-row').length > 0, null, { timeout: 120000 });
+console.log('import ms', Date.now() - t0, 'tree rows', await page.locator('.tree-row').count());
+console.log(await page.locator('.form .note').first().textContent());
+await page.waitForTimeout(800);
+await page.screenshot({ path: `${out}/step-imported.png` });
+console.log(errors.length ? errors.join('\n') : 'no page errors');
+await browser.close();

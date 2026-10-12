@@ -79,7 +79,7 @@ export const r254: BuiltinRobot = {
     kit.motor('drum_motor_a', [-L / 2 + inches(3), inches(9), -W / 2 - inches(1.4)], 'z');
     kit.motor('drum_motor_b', [-L / 2 + inches(3), inches(9), W / 2 + inches(1.4)], 'z');
     const hood = kit.group('hood');
-    kit.box('hood_plate', [-L / 2 - inches(0.8), inches(19), 0], [inches(6.5), inches(0.25), W - inches(1.5)], mat(0x333333, { opacity: 0.85 }), hood, [0, 0, 0.3]);
+    kit.box('hood_plate', [-L / 2 - inches(0.8), inches(19), 0], [inches(6.5), inches(0.25), W - inches(1.5)], M.smoke(), hood, [0, 0, 0.3]);
     // Side cameras.
     for (const s of [-1, 1]) kit.box(`cam_${s}`, [inches(2), H - inches(6), s * (W / 2 - inches(0.2))], [inches(1.5), inches(1), inches(0.6)], M.black());
     kit.led('led', [L / 2 - inches(1.5), H - inches(2), 0], [0.01, inches(0.6), W - inches(4)], gold);

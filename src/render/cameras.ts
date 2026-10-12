@@ -72,8 +72,9 @@ export class CameraRig {
       }
       case 'driver': {
         // Standing behind the alliance wall at a station, watching the robot.
-        const zs = [-2.2, 0, 2.2][this.station] * -sign;
-        desiredPos.set(sign * (FIELD.length / 2 + 0.9), 1.75, zs);
+        // Station positions along the wall, clear of the TOWER (blue frame, mirrored for red).
+        const zs = [-2.6, -1.25, 2.4][this.station] * -sign;
+        desiredPos.set(sign * (FIELD.length / 2 + 0.9), 1.95, zs);
         desiredLook.set(p.x, 0.3, p.z);
         snap = snap || false;
         break;
@@ -81,7 +82,7 @@ export class CameraRig {
       case 'fpv': {
         const fwd = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
         const h = robot.def.frame.height + 0.12;
-        desiredPos.copy(p).addScaledVector(fwd, robot.halfLength * 0.2).add(new THREE.Vector3(0, h, 0));
+        desiredPos.copy(p).addScaledVector(fwd, robot.halfLength * 0.55).add(new THREE.Vector3(0, h + 0.05, 0));
         desiredLook.copy(desiredPos).addScaledVector(fwd, 5).add(new THREE.Vector3(0, -0.9, 0));
         snap = true;
         break;

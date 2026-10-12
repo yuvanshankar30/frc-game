@@ -331,7 +331,14 @@ export class Game {
     for (const b of this.bots) {
       const cmd = b.ctl.command(
         this.field,
-        { hubActive: this.match.isHubActive(b.robot.alliance), endgame: this.match.phase === 'endgame', clock: info.clock, running: this.match.running },
+        {
+          hubActive: this.match.isHubActive(b.robot.alliance),
+          untilChange: this.match.untilHubChange(b.robot.alliance),
+          endgame: this.match.phase === 'endgame',
+          clock: info.clock,
+          running: this.match.running && this.match.phase !== 'pause',
+          auto,
+        },
         dt,
       );
       b.robot.step(cmd, { field: this.field, auto, assist: true }, dt);

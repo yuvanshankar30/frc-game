@@ -45,7 +45,7 @@ export class RobotPreview {
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.shadowMap.enabled = true;
-    this.scene.add(new THREE.HemisphereLight(0xe6eeff, 0x202228, 1.3));
+    this.scene.add(new THREE.HemisphereLight(0xe6eeff, 0x303440, 2.0));
     const key = new THREE.DirectionalLight(0xffffff, 2.2);
     key.position.set(2, 4, 2);
     key.castShadow = true;
@@ -112,7 +112,7 @@ export class RobotPreview {
     const dt = 1 / 60;
     this.t += dt;
     if (this.auto) this.yaw += dt * 0.35;
-    const r = 2.7;
+    const r = 2.25;
     this.camera.position.set(Math.cos(this.yaw) * Math.cos(this.pitch) * r, 0.25 + Math.sin(this.pitch) * r, Math.sin(this.yaw) * Math.cos(this.pitch) * r);
     this.camera.lookAt(0, 0.28, 0);
     // Gently cycle mechanisms so the preview shows them moving.

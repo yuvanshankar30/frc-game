@@ -40,9 +40,36 @@ export const M = {
   green: () => mat(0x30c050, { rough: 0.5 }),
   copper: () => mat(0xb87333, { metal: 0.8, rough: 0.3 }),
   kraken: () => mat(0x2a2d33, { metal: 0.5, rough: 0.35 }),
-  net: () => mat(0x111111, { opacity: 0.55, rough: 0.9 }),
+  net: () => netMaterial(),
   grip: () => mat(0x26282b, { rough: 1 }),
 };
+
+let netMat: THREE.Material | null = null;
+/** See-through knotted net (hopper netting). */
+function netMaterial() {
+  if (netMat) return netMat;
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d')!;
+  g.strokeStyle = 'rgba(30,30,34,1)';
+  g.lineWidth = 3;
+  for (let k = -64; k <= 64; k += 16) {
+    g.beginPath();
+    g.moveTo(k, 0);
+    g.lineTo(k + 64, 64);
+    g.stroke();
+    g.beginPath();
+    g.moveTo(k + 64, 0);
+    g.lineTo(k, 64);
+    g.stroke();
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(10, 10);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  netMat = new THREE.MeshStandardMaterial({ map: tex, transparent: true, alphaTest: 0.25, side: THREE.DoubleSide, roughness: 0.9 });
+  return netMat;
+}
 
 export class Kit {
   readonly root = new THREE.Group();
