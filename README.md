@@ -119,14 +119,17 @@ scripts/       headless test drivers (playwright-core + system Chrome)
 
 ## Testing
 
-- `pnpm test` runs the unit tests.
-- `node scripts/robot-suite.mjs <dir>` (dev server running) drives each built-in robot through a scripted course in headless Chrome:
-  - shooting from 2, 3.5 and 5m
-  - intake
-  - BUMP and TRENCH traversal
-  - climbing
+`pnpm test` runs the unit tests: the match state machine, shifts, scoring and RP, drivetrain kinematics, ballistics, schema, and rules checks for all built-ins.
 
-  It then prints a report.
-- `node scripts/editor-test.mjs <dir>` imports an STL through the editor, adds a joint, saves and test-drives it.
+The browser tests need the dev server running on :5273 (or `URL=...`) and use your installed Chrome through `playwright-core`:
+
+| Script | What it checks |
+|---|---|
+| `node scripts/robot-suite.mjs <dir>` | Every built-in robot: shooting from 2, 3.5 and 5m, intake, BUMP and TRENCH traversal, climbing |
+| `node scripts/match-test.mjs <dir>` | A fast-forwarded 3v3 bot match: phases, scores, results |
+| `node scripts/editor-test.mjs <dir>` | STL → editor → joint → save → test drive |
+| `node scripts/step-test.mjs <file.step> <dir>` | STEP import through the OpenCascade worker |
+| `node scripts/package-test.mjs <dir>` | `.frcbot` export → re-import → play, with joints intact |
+| `node scripts/robot-gallery.mjs <dir>` | Preview screenshots of every robot |
 
 Not affiliated with FIRST® or MoSim.

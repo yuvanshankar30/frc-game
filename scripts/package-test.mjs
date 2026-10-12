@@ -1,0 +1,46 @@
+// Export a built-in robot as .frcbot from the Garage, re-import it, and verify it plays with working joints.
+import { chromium } from 'playwright-core';
+const out = process.argv[2] ?? '.';
+const browser = await chromium.launch({ channel: 'chrome', headless: true });
+const ctx = await browser.newContext({ acceptDownloads: true, viewport: { width: 1440, height: 860 } });
+const page = await ctx.newPage();
+const errors = [];
+page.on('pageerror', (e) => errors.push(e.message));
+page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
+await page.goto(process.env.URL ?? 'http://localhost:5273/');
+await page.waitForTimeout(1200);
+await page.getByText('Garage').first().click();
+await page.waitForTimeout(600);
+await page.getByText(/^TEAM 2910$/).first().click();
+const [dl] = await Promise.all([page.waitForEvent('download'), page.getByText('Export .frcbot').click()]);
+const file = `${out}/${dl.suggestedFilename()}`;
+await dl.saveAs(file);
+console.log('exported', file);
+await page.setInputFiles('input[type=file]', file);
+await page.waitForTimeout(1500);
+const cards = await page.locator('.card .name').allTextContents();
+console.log('garage:', cards.join(' | '));
+await page.screenshot({ path: `${out}/garage-imported.png` });
+// Play it.
+await page.getByText('← Back').click();
+await page.getByText('Free Practice').first().click();
+await page.waitForTimeout(600);
+await page.locator('.card', { hasText: 'custom CAD' }).first().click();
+await page.getByText('Start Free Practice').click();
+await page.waitForFunction(() => window.__game?.players?.length, null, { timeout: 30000 });
+await page.waitForTimeout(800);
+const info = await page.evaluate(async () => {
+  const r = window.__game.players[0].robot;
+  const joints = [...r.assembly.joints.values()];
+  const withParts = joints.filter((j) => j.motion.children.length > 0).length;
+  window.dispatchEvent(new KeyboardEvent('keydown', { code: 'ShiftLeft' }));
+  await new Promise((res) => setTimeout(res, 800));
+  const slide = r.assembly.joints.get('slide');
+  const v = slide?.value;
+  window.dispatchEvent(new KeyboardEvent('keyup', { code: 'ShiftLeft' }));
+  return { name: r.def.name, source: r.def.source, joints: joints.length, jointsWithParts: withParts, partsMapped: r.def.parts.length, found: r.assembly.found.size, slideValue: v };
+});
+console.log(JSON.stringify(info));
+await page.screenshot({ path: `${out}/package-play.png` });
+console.log(errors.length ? errors.join('\n') : 'no page errors');
+await browser.close();
