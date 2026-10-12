@@ -4,6 +4,7 @@ import { TransformControls } from 'three/examples/jsm/controls/TransformControls
 import type { RobotDefinition } from '../robot/schema';
 import { assemble, applyJoint, type Assembly } from '../robot/assemble';
 import { makeBumpers } from '../robot/bumpers';
+import { applyEnvironment } from '../render/environment';
 import { FUEL } from '../field/rebuilt/dims';
 import { DEG } from '../util/units';
 
@@ -56,7 +57,8 @@ export class EditorViewport {
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.scene.background = new THREE.Color(0x10131a);
-    this.scene.add(new THREE.HemisphereLight(0xeef2ff, 0x30333a, 1.4));
+    this.scene.add(new THREE.HemisphereLight(0xeef2ff, 0x30333a, 0.9));
+    applyEnvironment(this.renderer, this.scene, 0.8);
     const key = new THREE.DirectionalLight(0xffffff, 2);
     key.position.set(2, 4, 3);
     this.scene.add(key);

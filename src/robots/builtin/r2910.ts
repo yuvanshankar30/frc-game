@@ -1,16 +1,25 @@
+import * as THREE from 'three';
 import { Kit, M, mat } from './kit';
-import { swerveBase, sidePlates, pivotIntake, Rig, type BuiltinRobot } from './common';
+import { swerveBase, groundIntake, intakeGearbox, Rig, type BuiltinRobot } from './common';
 import { inches } from '../../util/units';
 
 /**
  * 2910 Jack in the Bot — Re•Blitz (2026 World Championship Finalist, Newton captain).
- * Sources: robot code github.com/FRCTeam2910/2026CompetitionRobot-Public (Constants: intake pivot 0–114.3°,
- * hood 0–37° travel, flywheel on Kraken X60s, bumpers 35.625in square; subsystems intake / hopper (CANrange) /
- * shooter / drive / vision; no climber), frcteam2910.org rebuild post, Chief Delphi "2910 Robot Reveal, 2026: Blitz",
- * community REBUILT sim model (MK5n R1 at 7.03:1, ~12.7 ft/s; 4-wide drum fired out the back).
- *  - Rebuilt in three weeks into a dumper inspired by 254 / 1678 / 6328
- *  - 23–25 BPS typical with the intake saturated, 30 BPS small volleys (team)
- *  - Hopper extends forward with the intake
+ * Sources: "2910 Tech Binder 2026: Reblitz" (CAD + tech binder release, Chief Delphi #521705), robot code
+ * github.com/FRCTeam2910/2026CompetitionRobot-Public (intake pivot 0–114.3°, hood 0–37°, bumpers 35.625in square),
+ * robot photos.
+ *  - Drivebase: 27.5 × 27in, SDS MK5n R1 (4× X60 drive, 4× X44 steer), custom module lowering blocks, center brainpan,
+ *    polycarbonate bellypan so it doesn't get stuck on FUEL.
+ *  - Intake: over-the-bumper slap-down, X60 at 40:1 with #35 chain to the final sprocket, ~0.6in billet side plates
+ *    (partial-depth pockets, split in two), 2x2 "bash bar" on top of the 2in OD main roller, two 1.25in OD lower
+ *    dead-axle rollers, 2× X60 on the rollers; accommodates 4 balls at once; deploying it pushes the hopper out.
+ *  - Hopper: light-tinted polycarbonate, one-piece, stows above the shooter in starting configuration and slides out on
+ *    R3 bearings when the intake deploys; "catchers" lock it out. Closed top so it goes under the trench.
+ *  - Feeder: 15° inclined powered floor with ten 1.25in rollers + an indexing roller with nine 2.25in 35A compliant
+ *    wheels, all chain-driven by 4× X60, Teflon backing boards, CANranges.
+ *  - Shooter: FUEL indexes from the back and shoots out the FRONT; 4in OD aluminum drum with 1.5in hood rollers and a
+ *    6in flywheel at 6.7:1 overdrive; 4 balls wide; >30 BPS, sustained 34 BPS over a full hopper.
+ *  - No climber.
  */
 const L = inches(27.5);
 const W = inches(27);
@@ -25,14 +34,14 @@ export const r2910: BuiltinRobot = {
     author: 'Jack in the Bot',
     color: '#1fb04a',
     description:
-      'Rebuilt in three weeks and taken to Einstein. A pivoting slapdown intake feeds an extending hopper and a full-width, four-lane drum with a hood that fires out the back at 25+ BPS.',
-    highlights: ['2026 Championship Finalist', 'Pivot intake (0–114°), hood 0–37°', '4-lane rear drum, 25 BPS (30 bursts)', 'Turn the back to the HUB to shoot', 'Extending hopper', 'No climber (none in code)'],
-    sources: ['github.com/FRCTeam2910/2026CompetitionRobot-Public (Constants.java)', 'frcteam2910.org: "We Rebuilt our Robot. Then we went to Einstein."', 'Chief Delphi: 2910 Robot Reveal, 2026: Blitz'],
-    frame: { length: L, width: W, height: H, mass: 61, comHeight: 0.16, bumperThickness: inches(4) },
+      'Rebuilt in three weeks and taken to Einstein. A slapdown with a 2x2 bash bar pushes out a tinted one-piece hopper. FUEL climbs a 15° powered feeder to a rear tower, where a 4-wide drum and flywheel fire forward over the robot at 30+ BPS.',
+    highlights: ['2026 Championship Finalist', '30+ BPS (34 sustained), 4 balls wide', 'Shoots forward over the hopper', 'Slapdown with 2x2 bash bar', 'Tinted one-piece sliding hopper', 'No climber (none in code)'],
+    sources: ['2910 Tech Binder 2026: Reblitz (Chief Delphi CAD + tech binder release)', 'github.com/FRCTeam2910/2026CompetitionRobot-Public (Constants.java)', 'frcteam2910.org: "We Rebuilt our Robot. Then we went to Einstein."'],
+    frame: { length: L, width: W, height: H, mass: 61, comHeight: 0.16, bumperThickness: inches(4), bumperHeight: inches(5.5) },
     drivetrain: { type: 'swerve', maxSpeed: 3.9, maxAccel: 11, maxOmega: 10, maxAlpha: 34 },
     intake: {
-      zones: [{ center: [L / 2 + inches(4) + inches(5), inches(3.5), 0], size: [inches(7), inches(7), W - inches(1)] }],
-      rate: 22,
+      zones: [{ center: [L / 2 + inches(9), inches(3.5), 0], size: [inches(7), inches(7), W - inches(1)] }],
+      rate: 24,
       requiresDeploy: true,
     },
     storage: {
@@ -41,19 +50,19 @@ export const r2910: BuiltinRobot = {
       box: { center: [inches(3.5), inches(10.7), 0], size: [inches(28), inches(15.5), W - inches(1.8)] },
     },
     shooter: {
-      barrels: [-1.5, -0.5, 0.5, 1.5].map((k) => ({ exit: [-L / 2 - inches(2), inches(18.5), k * inches(5.6)] as [number, number, number], pivot: [0, 0, 0] as [number, number, number] })),
+      barrels: [-1.5, -0.5, 0.5, 1.5].map((k) => ({ exit: [-L / 2 + inches(7), inches(20.4), k * inches(5.6)] as [number, number, number], pivot: [0, 0, 0] as [number, number, number] })),
       angle: 55,
       // Hood travel 0–37° (code); modeled as launch elevation 40–77°.
       hoodMin: 40,
       hoodMax: 77,
       minSpeed: 4,
       maxSpeed: 15,
-      rate: 25,
+      rate: 30,
       spread: 1.5,
       turretMin: null,
       turretMax: null,
-      yawOffset: 180,
-      sotm: false,
+      yawOffset: 0,
+      sotm: true,
     },
     climber: null,
     source: 'builtin:2910',
@@ -61,53 +70,93 @@ export const r2910: BuiltinRobot = {
   build() {
     const kit = new Kit('2910-reblitz');
     const rig = new Rig();
-    const base = swerveBase(kit, rig, L, W, { electronics: [inches(3), 0] });
+    const base = swerveBase(kit, rig, L, W, { electronics: [inches(1), 0] });
     const y0 = base.railTop;
+    const tint = mat(0x1e2228, { opacity: 0.5, rough: 0.06 });
+    const plateMat = mat(0xb9bec5, { metal: 0.75, rough: 0.35 });
 
-    // Box-tube superstructure: corner uprights + top rails (the Re•Blitz "cage").
-    for (const sx of [-1, 1])
-      for (const sz of [-1, 1]) kit.tube('upright', [sx * (L / 2 - inches(1)), y0, sz * (W / 2 - inches(1))], [sx * (L / 2 - inches(1)), H - inches(1), sz * (W / 2 - inches(1))], [inches(1), inches(1)]);
-    for (const sz of [-1, 1]) kit.tube('top_rail', [-L / 2 + inches(1), H - inches(1.5), sz * (W / 2 - inches(1))], [L / 2 - inches(1), H - inches(1.5), sz * (W / 2 - inches(1))], [inches(1), inches(1)]);
-    // Clear side walls + net roof.
-    kit.polyBox('hopper', -L / 2 + inches(7), L / 2 - inches(1), -W / 2 + inches(0.5), W / 2 - inches(0.5), y0, H - inches(1.6), { open: ['top', 'front', 'back'], decals: ['JACK IN THE BOT', '2910 · RE•BLITZ'], decalColor: '#7dff9f' });
-    kit.box('roof_net', [inches(2), H - inches(1.6), 0], [L - inches(9), 0.003, W - inches(1)], M.net());
+    kit.box('bellypan_poly', [0, inches(1.2), 0], [L - inches(2), 0.003, W - inches(2)], M.polycarb());
 
-    // Extending hopper panel that slides out with the intake.
-    const ext = kit.group('hopper_ext');
-    for (const s of [-1, 1]) kit.box(`ext_side_${s}`, [L / 2 + inches(2.5), y0 + inches(6), s * (W / 2 - inches(0.2))], [inches(7), inches(10), 0.003], M.polycarb(), ext);
-    kit.box('ext_top', [L / 2 + inches(2.5), y0 + inches(11), 0], [inches(7), inches(0.5), W - inches(0.5)], M.tube(), ext);
-
-    // Roller floor (live rollers, CANrange in the hopper).
-    const floor = kit.group('floor');
-    for (let k = 0; k < 6; k++) kit.tubeRoller(`floor_${k}`, L / 2 - inches(3) - k * inches(3.2), y0 + inches(0.9), -W / 2 + inches(1.5), W / 2 - inches(1.5), inches(0.75), 0x2a2d33, floor);
-    kit.box('canrange', [0, y0 + inches(12), -W / 2 + inches(1)], [inches(1), inches(1), inches(0.6)], mat(0xff6600));
-
-    // Rear 4-lane drum + hood with sector plates, feeder underneath.
-    sidePlates(kit, 'shooter_plate', -L / 2 + inches(3.5), inches(12.5), W / 2 - inches(0.6), [inches(9), inches(18)], 0x1f2226);
-    const drum = kit.drum('drum', -L / 2 + inches(2.5), inches(16), W - inches(2.2), inches(2));
-    const feeder = kit.tubeRoller('feeder', -L / 2 + inches(6.5), inches(12.5), -W / 2 + inches(1.5), W / 2 - inches(1.5), inches(1), 0xff8800);
-    for (const s of [-1, 1]) {
-      kit.motor(`drum_motor${s}`, [-L / 2 + inches(4), inches(9), s * (W / 2 + inches(1.3))], 'z');
-      kit.pulley(`drum_pulley${s}`, [-L / 2 + inches(2.5), inches(16), s * (W / 2 - inches(0.15))], inches(1.8));
-    }
+    // ---------- shooter tower (rear): pocketed billet plates, drum + flywheel + hood rollers, firing forward
+    const TX = -L / 2 + inches(5);
+    for (const s of [-1, 1]) kit.pocketPlate(`tower_plate${s}`, [TX, inches(11.5), s * (W / 2 - inches(0.6))], inches(10), inches(19), { color: 0xb9bec5, cell: inches(2.2), rib: inches(0.35), t: inches(0.25) });
+    kit.box('tower_backing', [TX - inches(3.5), inches(11), 0], [inches(0.25), inches(16), W - inches(1.4)], mat(0xeeeeee, { rough: 0.3 }));
+    const drumC: [number, number, number] = [TX - inches(1), inches(17.5), 0];
+    const drum = kit.drum('drum', drumC[0], drumC[1], W - inches(1.8), inches(2));
+    const fly = kit.group('flywheel6');
+    for (const s of [-1, 1]) kit.pulley(`flywheel6_${s}`, [drumC[0], drumC[1], s * (W / 2 - inches(0.15))], inches(3), { parent: fly, color: 0x9aa1aa, spokes: 6, t: inches(0.5) });
     const hood = kit.group('hood');
-    const hp: [number, number, number] = [-L / 2 + inches(5), inches(19.2), 0];
-    for (let k = 0; k < 5; k++) kit.box(`hood_slat${k}`, [hp[0] - inches(1) - k * inches(1.1), hp[1] - k * inches(0.15), 0], [inches(1.2), inches(0.25), W - inches(2.4)], M.smoke(), hood, [0, 0, 0.12 * k]);
-    for (const s of [-1, 1]) kit.sectorPlate(`hood_sector${s}`, [hp[0], hp[1], s * (W / 2 - inches(1.1))], inches(4.5), Math.PI * 0.75, Math.PI * 1.15, { parent: hood, color: GREEN, teeth: 16 });
+    const hp: [number, number, number] = [TX + inches(2.5), inches(20.6), 0];
+    for (let k = 0; k < 3; k++) kit.tubeRoller(`hood_roller${k}`, drumC[0] + inches(2.4) + k * inches(1.3), drumC[1] + inches(2.6) - k * inches(0.4), -W / 2 + inches(1.6), W / 2 - inches(1.6), inches(0.75), 0x8f969e, hood);
+    for (const s of [-1, 1]) kit.sectorPlate(`hood_sector${s}`, [hp[0], hp[1], s * (W / 2 - inches(1.2))], inches(4.2), Math.PI * 0.8, Math.PI * 1.2, { parent: hood, color: GREEN, teeth: 16 });
+    for (const s of [-1, 1]) {
+      kit.motor(`shooter_x60_${s}a`, [TX - inches(2), inches(8), s * (W / 2 + inches(1.3))], 'z');
+      kit.motor(`shooter_x60_${s}b`, [TX + inches(1.5), inches(8), s * (W / 2 + inches(1.3))], 'z');
+      kit.belt(`shooter_chain_${s}`, [TX - inches(2), inches(8)], [drumC[0], drumC[1]], s * (W / 2 + inches(0.2)));
+    }
 
-    // Pivoting slapdown intake (0–114.3°).
-    const ipiv: [number, number, number] = [L / 2 - inches(1), y0 + inches(7), 0];
-    const intake = pivotIntake(kit, 'intake', ipiv, inches(12), W, { color: 0x1d2024, wheel: GREEN, armAngle: 0.52 });
-    kit.limelight([0, H - inches(0.5), 0], Math.PI);
-    kit.led('led', [L / 2 - inches(1.5), H - inches(1.8), 0], [0.006, inches(0.6), W - inches(4)], GREEN);
+    // ---------- feeder: 15° powered floor (ten 1.25in rollers) + indexer with nine 2.25in compliant wheels
+    const feed = kit.group('feeder_floor');
+    const ang = (15 * Math.PI) / 180;
+    for (let k = 0; k < 10; k++) {
+      const x = L / 2 - inches(3) - k * inches(1.9);
+      const y = y0 + inches(1) + (L / 2 - inches(3) - x) * Math.tan(ang) * 0.6;
+      kit.tubeRoller(`feed_${k}`, x, y, -W / 2 + inches(1.5), W / 2 - inches(1.5), inches(0.625), 0x2a2d33, feed);
+    }
+    const indexer = kit.group('indexer');
+    for (let k = 0; k < 9; k++) kit.compliant(`index_wheel_${k}`, [TX + inches(3.5), inches(10.5), -W / 2 + inches(2.2) + k * ((W - inches(4.4)) / 8)], inches(1.125), inches(0.9), GREEN, indexer);
+    kit.cyl('index_shaft', [TX + inches(3.5), inches(10.5), 0], inches(0.25), W - inches(2), 'z', M.steel(), indexer, 6);
+    kit.box('canrange_hopper', [0, y0 + inches(14), -W / 2 + inches(1)], [inches(1), inches(1), inches(0.6)], mat(0xff6600));
+    kit.box('canrange_tower', [TX, inches(16), W / 2 - inches(1.2)], [inches(1), inches(1), inches(0.6)], mat(0xff6600));
+
+    // ---------- one-piece tinted hopper with chamfered front-top edge (slides out with the intake)
+    const hop = kit.group('hopper_ext');
+    const hx0 = -L / 2 + inches(9.5);
+    const hx1 = L / 2 + inches(2);
+    const hy0 = y0;
+    const hy1 = H - inches(0.4);
+    const ch = inches(4);
+    for (const s of [-1, 1]) {
+      const sh = new THREE.Shape();
+      sh.moveTo(hx0, hy0);
+      sh.lineTo(hx1, hy0);
+      sh.lineTo(hx1, hy1 - ch);
+      sh.lineTo(hx1 - ch, hy1);
+      sh.lineTo(hx0, hy1);
+      sh.closePath();
+      const g = new THREE.ExtrudeGeometry(sh, { depth: 0.003, bevelEnabled: false });
+      g.translate(0, 0, s * (W / 2 - inches(0.4)));
+      kit.add(new THREE.Mesh(g, tint), `hopper_side${s}`, hop);
+      kit.box(`hopper_bracket_top${s}`, [(hx0 + hx1 - ch) / 2, hy1, s * (W / 2 - inches(0.4))], [hx1 - hx0 - ch, inches(0.6), inches(0.6)], plateMat, hop);
+      kit.box(`hopper_bracket_front${s}`, [hx1, (hy0 + hy1 - ch) / 2, s * (W / 2 - inches(0.4))], [inches(0.6), hy1 - hy0 - ch, inches(0.6)], plateMat, hop);
+    }
+    kit.box('hopper_roof', [(hx0 + hx1 - ch) / 2, hy1, 0], [hx1 - hx0 - ch, 0.003, W - inches(0.8)], tint, hop);
+    const chamfer = kit.box('hopper_chamfer', [hx1 - ch / 2, hy1 - ch / 2, 0], [ch * 1.414, 0.003, W - inches(0.8)], tint, hop);
+    chamfer.rotation.z = -Math.PI / 4;
+    kit.box('hopper_front', [hx1, hy0 + inches(4), 0], [0.003, inches(8), W - inches(0.8)], tint, hop);
+    kit.box('hopper_front_tube', [hx1, hy1 - ch, 0], [inches(0.5), inches(1), W - inches(0.8)], M.tube(), hop);
+    for (const s of [-1, 1] as const) kit.sponsors(`sponsors_${s}`, [inches(1), y0 + inches(8), s * (W / 2 - inches(0.36))], inches(14), inches(6), ['BOEING', 'fabworks', 'WCP', 'Jackson HS', 'Mill Creek'], 'xy', s, hop, '#e8edf2');
+
+    // ---------- slap-down intake: billet side plates, 2x2 bash bar over the 2in roller, two 1.25in lower rollers
+    const ipiv: [number, number, number] = [L / 2 - inches(1.5), y0 + inches(7), 0];
+    const intake = groundIntake(kit, 'intake', { pivot: [ipiv[0], ipiv[1]], rollerX: L / 2 + inches(4) + inches(4.5), rollerR: inches(1), width: W, roller: 'silicone', wheel: 0x2a2d33, armColor: 0xb9bec5, kicker: true, deflector: false });
+    intakeGearbox(kit, 'intake', [ipiv[0], ipiv[1]], W / 2 - inches(2));
+    kit.box('bash_bar', [intake.rollerCenter[0] - inches(0.5), intake.rollerCenter[1] + inches(2.4), 0], [inches(2), inches(2), W - inches(0.6)], M.tube(), intake.group);
+    kit.tubeRoller('intake_lower2', intake.rollerCenter[0] - inches(5.5), inches(2.6), -W / 2 + inches(1.5), W / 2 - inches(1.5), inches(0.625), 0x2a2d33, intake.group);
+
+    kit.limelight([L / 2 - inches(3), H - inches(2), 0], 0);
+    kit.led('led', [-L / 2 + inches(0.4), inches(14), 0], [0.006, inches(0.6), W - inches(6)], GREEN);
 
     rig.joint({ id: 'intake', type: 'revolute', driver: 'intake-deploy', pivot: ipiv, axis: [0, 0, 1], stowed: 114.3, active: 0, speed: 600 }, intake.group);
-    rig.joint({ id: 'intake_roll', type: 'spin', driver: 'intake-roller', parent: 'intake', pivot: intake.rollerCenter, axis: [0, 0, 1], speed: 2000 }, intake.roller);
-    rig.joint({ id: 'hopper_ext', type: 'prismatic', driver: 'intake-deploy', pivot: [0, 0, 0], axis: [1, 0, 0], stowed: -inches(5), active: 0, speed: 0.6 }, ext);
-    rig.joint({ id: 'floor', type: 'spin', driver: 'indexer', pivot: [L / 2 - inches(3), y0 + inches(0.9), 0], axis: [0, 0, 1], speed: 1400 }, 'floor_0');
-    rig.joint({ id: 'feeder', type: 'spin', driver: 'indexer', pivot: [-L / 2 + inches(6.5), inches(12.5), 0], axis: [0, 0, -1], speed: 1500 }, feeder);
-    rig.joint({ id: 'drum', type: 'spin', driver: 'shooter-wheel', pivot: [-L / 2 + inches(2.5), inches(16), 0], axis: [0, 0, -1], speed: 3200 }, drum);
-    rig.joint({ id: 'hood', type: 'revolute', driver: 'hood', pivot: hp, axis: [0, 0, 1], stowed: 0, active: -37, speed: 180 }, hood);
-    return { model: kit.root, joints: rig.joints, parts: rig.parts };
+    rig.joint({ id: 'intake_roll', type: 'spin', driver: 'intake-roller', parent: 'intake', pivot: intake.rollerCenter, axis: [0, 0, 1], speed: 2200 }, intake.roller);
+    if (intake.kickerNode) rig.joint({ id: 'intake_kick', type: 'spin', driver: 'intake-roller', parent: 'intake', pivot: intake.kickerCenter!, axis: [0, 0, -1], speed: 2400 }, intake.kickerNode);
+    rig.joint({ id: 'hopper_ext', type: 'prismatic', driver: 'intake-deploy', pivot: [0, 0, 0], axis: [1, 0, 0], stowed: -inches(6), active: 0, speed: 0.6 }, hop);
+    rig.joint({ id: 'feed', type: 'spin', driver: 'indexer', pivot: [L / 2 - inches(3), y0 + inches(1), 0], axis: [0, 0, 1], speed: 1400 }, 'feed_0');
+    rig.joint({ id: 'indexer', type: 'spin', driver: 'indexer', pivot: [TX + inches(3.5), inches(10.5), 0], axis: [0, 0, 1], speed: 1600 }, indexer);
+    rig.joint({ id: 'drum', type: 'spin', driver: 'shooter-wheel', pivot: drumC, axis: [0, 0, 1], speed: 3200 }, drum);
+    rig.joint({ id: 'flywheel6', type: 'spin', driver: 'shooter-wheel', pivot: drumC, axis: [0, 0, 1], speed: 3200 }, fly);
+    rig.joint({ id: 'hood', type: 'revolute', driver: 'hood', pivot: hp, axis: [0, 0, 1], stowed: 0, active: 37, speed: 180 }, hood);
+    const zones = [{ center: [intake.rollerCenter[0] + inches(1), inches(3.5), 0] as [number, number, number], size: [inches(7), inches(7), W - inches(1)] as [number, number, number] }];
+    return { model: kit.root, joints: rig.joints, parts: rig.parts, patch: { intake: { ...r2910.def.intake!, zones } } };
   },
 };

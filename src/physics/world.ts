@@ -31,6 +31,8 @@ export const GROUP = {
   HOPPER: 0x0020,
   /** FUEL inside a robot's hopper. */
   STORED: 0x0040,
+  /** Bumper skirt to the carpet that only loose FUEL hits (keeps balls from wedging under bumpers). */
+  SKIRT: 0x0080,
 };
 
 export function groups(member: number, filter: number) {

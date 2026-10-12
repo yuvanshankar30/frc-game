@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { loadRobot } from '../robots/registry';
 import { robotVisual } from './preview';
+import { applyEnvironment } from './environment';
 
 /** Renders small transparent PNG thumbnails of robots (cached per id) with one shared renderer. */
 let renderer: THREE.WebGLRenderer | null = null;
@@ -42,7 +43,8 @@ export function robotThumb(id: string, alliance: 'blue' | 'red' = 'blue'): Promi
       await new Promise((r) => setTimeout(r, 16)); // yield a frame between thumbnails
       const { def, model } = await loadRobot(id);
       const scene = new THREE.Scene();
-      scene.add(new THREE.HemisphereLight(0xeef3ff, 0x30343e, 2.2));
+      scene.add(new THREE.HemisphereLight(0xeef3ff, 0x30343e, 1.3));
+      applyEnvironment(getRenderer(), scene, 0.85);
       const key = new THREE.DirectionalLight(0xffffff, 2.4);
       key.position.set(2, 3, 2.5);
       scene.add(key);

@@ -126,7 +126,54 @@ export function decalTex(lines: string[], opts: { bg?: string; fg?: string; w?: 
   });
 }
 
+/** Carbon-fiber twill weave. */
+function cfTex() {
+  return canvasTex(
+    'cf',
+    64,
+    64,
+    (g) => {
+      g.fillStyle = '#1c1d20';
+      g.fillRect(0, 0, 64, 64);
+      for (let y = 0; y < 64; y += 8)
+        for (let x = 0; x < 64; x += 8) {
+          const odd = ((x + y) / 8) % 2 === 0;
+          const grd = odd ? g.createLinearGradient(x, y, x + 8, y) : g.createLinearGradient(x, y, x, y + 8);
+          grd.addColorStop(0, '#2a2c31');
+          grd.addColorStop(0.5, '#3a3d43');
+          grd.addColorStop(1, '#222327');
+          g.fillStyle = grd;
+          g.fillRect(x + 0.5, y + 0.5, 7, 7);
+        }
+    },
+    [36, 36],
+  );
+}
+
+/** Rivet / bolt hole pattern along the edges of a panel (overlay). */
+function rivetTex() {
+  return canvasTex('rivets', 256, 256, (g) => {
+    g.clearRect(0, 0, 256, 256);
+    g.fillStyle = 'rgba(205,210,216,0.95)';
+    for (let k = 10; k < 256; k += 22) {
+      for (const [x, y] of [
+        [k, 7],
+        [k, 249],
+        [7, k],
+        [249, k],
+      ]) {
+        g.beginPath();
+        g.arc(x, y, 3.2, 0, Math.PI * 2);
+        g.fill();
+      }
+    }
+  });
+}
+
 export const M = {
+  /** Carbon fiber for geometry with world-space UVs (extrusions / kit.panel). */
+  cf: () => mat(0xffffff, { metal: 0.35, rough: 0.35, map: cfTex() }),
+  smokeLight: () => mat(0x22262c, { opacity: 0.5, rough: 0.08 }),
   alu: () => mat(0xc4c9cf, { metal: 0.8, rough: 0.35 }),
   tube: () => mat(0xffffff, { metal: 0.6, rough: 0.4, map: tubeTex() }),
   aluDark: () => mat(0x6d737b, { metal: 0.7, rough: 0.4 }),
@@ -286,6 +333,28 @@ export class Kit {
   pocketPlate(name: string, c: V3, w: number, h: number, opts: { t?: number; color?: number; plane?: 'xy' | 'zy' | 'xz'; rib?: number; cell?: number; parent?: THREE.Object3D } = {}) {
     const shape = pocketedRectShape(w, h, opts.rib ?? inches(0.5), opts.cell ?? inches(3));
     return this.extrude(name, shape, opts.t ?? inches(0.25), mat(opts.color ?? 0x24272d, { metal: 0.45, rough: 0.45 }), opts.plane ?? 'xy', c, opts.parent);
+  }
+
+  /**
+   * Tapered intake/climber arm plate in the XY plane, pivot end at the local origin pointing +X:
+   * rounded ends and a row of lightening holes.
+   */
+  taperArm(name: string, len: number, w0: number, w1: number, c: V3, color: number, parent?: THREE.Object3D, t = inches(0.25)) {
+    const sh = new THREE.Shape();
+    sh.moveTo(0, -w0 / 2);
+    sh.lineTo(len, -w1 / 2);
+    sh.absarc(len, 0, w1 / 2, -Math.PI / 2, Math.PI / 2, false);
+    sh.lineTo(0, w0 / 2);
+    sh.absarc(0, 0, w0 / 2, Math.PI / 2, (3 * Math.PI) / 2, false);
+    const n = Math.max(1, Math.floor(len / inches(2.2)) - 1);
+    for (let k = 1; k <= n; k++) {
+      const x = (k / (n + 1)) * len;
+      const w = w0 + (w1 - w0) * (x / len);
+      const h = new THREE.Path();
+      h.absarc(x, 0, w * 0.26, 0, Math.PI * 2, true);
+      sh.holes.push(h);
+    }
+    return this.extrude(name, sh, t, mat(color, { metal: 0.45, rough: 0.4 }), 'xy', c, parent);
   }
 
   /** Hood / climber sector gear plate in the XY plane, pivot at c. Angles in radians. */
@@ -453,6 +522,7 @@ export class Kit {
         [z1 + 0.003, false],
       ] as const) {
         const p = new THREE.Mesh(new THREE.PlaneGeometry(L * 0.8, H * 0.55), dm);
+        p.renderOrder = 3;
         p.position.set(cx, (y0 + y1) / 2, z);
         if (flip) p.rotation.y = Math.PI;
         this.add(p, `${name}_decal`, g);
@@ -494,6 +564,134 @@ export class Kit {
     const b = this.box(name, c, [inches(1), inches(1), inches(1.4)], M.black(), parent);
     b.rotation.y = yaw;
     return b;
+  }
+
+  /** Panel with rivets along its edges (world-scaled UVs so CF / textures keep their scale). plane: 'xy' faces Z, 'zy' faces X, 'xz' faces Y. */
+  panel(name: string, c: V3, w: number, h: number, material: THREE.Material, plane: 'xy' | 'zy' | 'xz' = 'xy', parent?: THREE.Object3D, t = inches(0.06)) {
+    const g = this.group(`${name}_g`, parent);
+    const sh = new THREE.Shape();
+    sh.moveTo(-w / 2, -h / 2);
+    sh.lineTo(w / 2, -h / 2);
+    sh.lineTo(w / 2, h / 2);
+    sh.lineTo(-w / 2, h / 2);
+    sh.closePath();
+    this.extrude(name, sh, t, material, plane, c, g);
+    const rm = new THREE.MeshBasicMaterial({ map: rivetTex(), transparent: true, depthWrite: false });
+    for (const side of [-1, 1]) {
+      const p = new THREE.Mesh(new THREE.PlaneGeometry(w, h), rm);
+      if (plane === 'xy') {
+        p.position.set(c[0], c[1], c[2] + side * (t / 2 + 0.0008));
+        if (side < 0) p.rotation.y = Math.PI;
+      } else if (plane === 'zy') {
+        p.position.set(c[0] + side * (t / 2 + 0.0008), c[1], c[2]);
+        p.rotation.y = side > 0 ? Math.PI / 2 : -Math.PI / 2;
+      } else {
+        p.position.set(c[0], c[1] + side * (t / 2 + 0.0008), c[2]);
+        p.rotation.x = side > 0 ? -Math.PI / 2 : Math.PI / 2;
+      }
+      this.add(p, `${name}_rivets`, g);
+    }
+    return g;
+  }
+
+  /** X-contact / turret bearing ring (horizontal) with bolt circle. */
+  bearingRing(name: string, c: V3, rIn: number, parent?: THREE.Object3D, color = 0x2a2c31) {
+    const g = this.group(name, parent);
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(rIn + inches(0.45), inches(0.45), 8, 56), mat(color, { metal: 0.6, rough: 0.35 }));
+    ring.rotation.x = Math.PI / 2;
+    ring.position.set(c[0], c[1], c[2]);
+    this.add(ring, `${name}_race`, g);
+    const n = 16;
+    for (let k = 0; k < n; k++) {
+      const a = (k / n) * Math.PI * 2;
+      this.cyl(`${name}_bolt${k}`, [c[0] + Math.cos(a) * (rIn + inches(0.45)), c[1] + inches(0.5), c[2] + Math.sin(a) * (rIn + inches(0.45))], inches(0.12), inches(0.25), 'y', M.steel(), g, 6);
+    }
+    return g;
+  }
+
+  /** Omni wheel: hub plates + rollers around the rim. Axis along 'x' | 'y' | 'z'. */
+  omni(name: string, c: V3, r: number, w: number, axis: 'x' | 'y' | 'z', parent?: THREE.Object3D, color = 0x2a2c31) {
+    const g = this.group(name, parent);
+    this.cyl(`${name}_hub`, c, r * 0.72, w, axis, mat(color, { metal: 0.4, rough: 0.5 }), g, 16);
+    const n = 10;
+    for (let k = 0; k < n; k++) {
+      const a = (k / n) * Math.PI * 2;
+      const off: V3 = [0, 0, 0];
+      const u = Math.cos(a) * r * 0.86;
+      const v = Math.sin(a) * r * 0.86;
+      if (axis === 'z') [off[0], off[1]] = [u, v];
+      else if (axis === 'x') [off[1], off[2]] = [u, v];
+      else [off[0], off[2]] = [u, v];
+      const roller = new THREE.Mesh(new THREE.CapsuleGeometry(r * 0.13, r * 0.28, 3, 8), M.rubber());
+      roller.position.set(c[0] + off[0], c[1] + off[1], c[2] + off[2]);
+      // Rollers lie tangent to the rim.
+      if (axis === 'z') roller.rotation.z = a;
+      else if (axis === 'x') roller.rotation.x = a + Math.PI / 2;
+      else {
+        roller.rotation.z = Math.PI / 2;
+        roller.rotation.y = -a;
+      }
+      this.add(roller, `${name}_r${k}`, g);
+    }
+    return g;
+  }
+
+  /** Compliant (star) wheel: hub + flexible fins, axis along Z. */
+  compliant(name: string, c: V3, r: number, w: number, color: number, parent?: THREE.Object3D) {
+    const g = this.group(name, parent);
+    this.cyl(`${name}_hub`, c, r * 0.4, w, 'z', mat(color, { rough: 0.8 }), g, 12);
+    const fins = 8;
+    for (let k = 0; k < fins; k++) {
+      const a = (k / fins) * Math.PI * 2;
+      const fin = this.box(`${name}_fin${k}`, [c[0] + Math.cos(a) * r * 0.68, c[1] + Math.sin(a) * r * 0.68, c[2]], [r * 0.62, r * 0.16, w], mat(color, { rough: 0.85 }), g);
+      fin.rotation.z = a + 0.35;
+    }
+    return g;
+  }
+
+  /** Standoff between two points (thin hex rod). */
+  standoff(name: string, a: V3, b: V3, parent?: THREE.Object3D) {
+    const d = new THREE.Vector3(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(inches(0.19), inches(0.19), d.length(), 6), M.aluDark());
+    m.position.set((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2);
+    m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize());
+    return this.add(m, name, parent);
+  }
+
+  /** Sponsor sticker panel: names laid out like a sponsor board. plane 'xy' faces ±Z (side), 'zy' faces ±X. */
+  sponsors(name: string, c: V3, w: number, h: number, names: string[], plane: 'xy' | 'zy', facing: 1 | -1, parent?: THREE.Object3D, ink = '#ffffff') {
+    const key = `sponsors|${names.join(',')}|${ink}|${Math.round((w / h) * 10)}`;
+    const tex = canvasTex(key, 1024, Math.max(128, Math.round((1024 * h) / w)), (g) => {
+      const W = 1024;
+      const H = Math.max(128, Math.round((1024 * h) / w));
+      g.clearRect(0, 0, W, H);
+      const cols = Math.max(2, Math.round(Math.sqrt((names.length * W) / H / 2.2)));
+      const rows = Math.ceil(names.length / cols);
+      const cw = W / cols;
+      const rh = H / rows;
+      const fonts = ['800 {s}px Inter, Arial', 'italic 700 {s}px Georgia, serif', '700 {s}px "Arial Black", Arial', '600 {s}px "Barlow Condensed", Arial', '800 {s}px Verdana, Arial'];
+      names.forEach((n, i) => {
+        const x = (i % cols) * cw + cw / 2;
+        const y = Math.floor(i / cols) * rh + rh / 2;
+        let size = Math.min(rh * 0.5, (cw / Math.max(4, n.length)) * 1.6);
+        g.font = fonts[i % fonts.length].replace('{s}', String(Math.round(size)));
+        while (g.measureText(n).width > cw * 0.9 && size > 8) {
+          size -= 2;
+          g.font = fonts[i % fonts.length].replace('{s}', String(Math.round(size)));
+        }
+        g.fillStyle = ink;
+        g.globalAlpha = 0.92;
+        g.textAlign = 'center';
+        g.textBaseline = 'middle';
+        g.fillText(n, x, y);
+      });
+    });
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false }));
+    m.renderOrder = 3; // draw after smoked / clear panels so decals stay visible
+    m.position.set(c[0], c[1], c[2]);
+    if (plane === 'xy') m.rotation.y = facing > 0 ? 0 : Math.PI;
+    else m.rotation.y = facing > 0 ? Math.PI / 2 : -Math.PI / 2;
+    return this.add(m, name, parent);
   }
 
   /** LED strip. */

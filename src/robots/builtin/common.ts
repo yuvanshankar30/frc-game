@@ -1,4 +1,4 @@
-import type * as THREE from 'three';
+import * as THREE from 'three';
 import { Kit, M, mat } from './kit';
 import type { RobotDefinitionInput } from '../../robot/schema';
 import { inches } from '../../util/units';
@@ -118,33 +118,82 @@ export function turret(
   };
 }
 
-/** Over-the-bumper pivoting ground intake: two arms, compliant roller, top roller, motor. */
-export function pivotIntake(
+/**
+ * Over-the-bumper slapdown ground intake, built from real geometry: a pivot inside the frame and a
+ * roller that lands just past the bumper with its contact patch at carpet height. Arm length and
+ * angle are derived. Modeled deployed (joint value 0); a revolute joint about +Z stows it upward.
+ */
+export function groundIntake(
   kit: Kit,
   name: string,
-  pivot: V3,
-  armLen: number,
-  width: number,
-  opts: { color?: number; wheel?: number; armAngle?: number; parent?: THREE.Object3D; tube?: boolean } = {},
+  opts: {
+    pivot: [number, number]; // x, y of the pivot (robot frame)
+    rollerX: number; // x of the roller axis when deployed
+    rollerR?: number; // main roller radius
+    width: number; // overall width between arm outer faces
+    roller?: 'compliant' | 'silicone';
+    wheel?: number; // compliant wheel / silicone color
+    armColor?: number;
+    armStyle?: 'plate' | 'tube';
+    tubeColor?: number;
+    kicker?: boolean; // secondary roller behind/above the main roller
+    deflector?: boolean;
+  },
 ) {
-  const g = kit.group(name, opts.parent);
-  const [px, py] = pivot;
-  // Arms are modeled deployed (pointing forward and down at armAngle below horizontal).
-  const a = opts.armAngle ?? 0.45;
-  const ex = px + Math.cos(a) * armLen;
-  const ey = py - Math.sin(a) * armLen;
+  const g = kit.group(name);
+  const [px, py] = opts.pivot;
+  const r = opts.rollerR ?? inches(1.5);
+  const rx = opts.rollerX;
+  const ry = r + inches(0.35); // a hair off the carpet
+  const dx = rx - px;
+  const dy = py - ry;
+  const len = Math.hypot(dx, dy);
+  const ang = Math.atan2(dy, dx); // below horizontal
+  const W = opts.width;
+  const armZ = W / 2 - inches(0.5);
+  // Everything along the arm is built in an "arm space" group: origin at the pivot, +X down the arm.
+  const arm = new THREE.Group();
+  arm.position.set(px, py, 0);
+  arm.rotation.z = -ang;
+  arm.name = `${name}_armspace`;
+  g.add(arm);
+  const armColor = opts.armColor ?? 0x24272d;
   for (const s of [-1, 1]) {
-    const arm = kit.pocketPlate(`${name}_arm${s}`, [(px + ex) / 2, (py + ey) / 2, s * (width / 2 - inches(0.4))], armLen + inches(1.5), inches(2.4), { parent: g, color: opts.color ?? 0x24272d, cell: inches(2) });
-    arm.rotation.z = -a;
-  }
-  if (opts.tube) {
-    for (const s of [-1, 1]) {
-      const t = kit.box(`${name}_tube${s}`, [(px + ex) / 2, (py + ey) / 2 + inches(1.5), s * (width / 2 - inches(1.6))], [armLen, inches(1), inches(1)], M.tube(), g);
-      t.rotation.z = -a;
+    if (opts.armStyle === 'tube') {
+      kit.box(`${name}_armtube${s}`, [len / 2, 0, s * armZ], [len + inches(1), inches(1), inches(1)], mat(opts.tubeColor ?? 0x1f5bd8, { metal: 0.5, rough: 0.35 }), arm);
+      kit.box(`${name}_armplate${s}`, [len - inches(1.5), 0, s * (armZ + inches(0.6))], [inches(4), inches(2.6), inches(0.19)], mat(armColor, { metal: 0.4 }), arm);
+    } else {
+      kit.taperArm(`${name}_arm${s}`, len, inches(3.2), inches(2.2), [0, 0, s * armZ], armColor, arm);
     }
+    // Pivot hub + bearing.
+    kit.cyl(`${name}_hub${s}`, [0, 0, s * armZ], inches(1), inches(0.6), 'z', M.aluDark(), arm, 16);
+    // Belt from the motor pulley near the pivot to the roller pulley.
+    kit.belt(`${name}_belt${s}`, [inches(2), 0], [len, 0], s * (armZ + inches(0.35)), arm);
   }
-  const roller = kit.roller(`${name}_roller`, ex, ey, -width / 2 + inches(1), width / 2 - inches(1), inches(1.6), g, opts.wheel ?? 0x2a62ff, inches(1.8));
-  const mid = kit.tubeRoller(`${name}_mid`, px + Math.cos(a) * armLen * 0.55, py - Math.sin(a) * armLen * 0.55 + inches(1.6), -width / 2 + inches(1), width / 2 - inches(1), inches(0.75), 0x2a2d33, g);
-  kit.motor(`${name}_motor`, [px + Math.cos(a) * armLen * 0.3, py - Math.sin(a) * armLen * 0.3 + inches(1.5), width / 2 - inches(2.2)], 'z', g);
-  return { group: g, roller, mid, rollerCenter: [ex, ey, 0] as V3 };
+  // Crossbar between the arms (2x1 tube) and an optional polycarb deflector.
+  kit.box(`${name}_crossbar`, [len * 0.38, inches(1.2), 0], [inches(1), inches(2), W - inches(1)], M.tube(), arm);
+  if (opts.deflector !== false) kit.box(`${name}_deflector`, [len * 0.65, inches(1.6), 0], [len * 0.55, inches(0.1), W - inches(1.6)], M.polycarb(), arm);
+  // Main roller at the arm tip (built in robot space so it can carry its own spin joint).
+  const rollerName = `${name}_roller`;
+  const roller =
+    opts.roller === 'silicone'
+      ? kit.tubeRoller(rollerName, rx, ry, -W / 2 + inches(1), W / 2 - inches(1), r, opts.wheel ?? 0x2a62ff, g)
+      : kit.roller(rollerName, rx, ry, -W / 2 + inches(1), W / 2 - inches(1), r, g, opts.wheel ?? 0x2a62ff, inches(1.6));
+  let kickerNode: THREE.Object3D | null = null;
+  let kickerCenter: [number, number, number] | null = null;
+  if (opts.kicker) {
+    const kx = rx - Math.cos(ang) * inches(3.2);
+    const ky = ry + Math.sin(ang) * inches(3.2) + inches(1.6);
+    kickerNode = kit.tubeRoller(`${name}_kicker`, kx, ky, -W / 2 + inches(1.5), W / 2 - inches(1.5), inches(0.625), 0x2a2d33, g);
+    kickerCenter = [kx, ky, 0];
+  }
+  // Roller motor on the arm, near the pivot.
+  kit.motor(`${name}_motor`, [px + Math.cos(ang) * inches(2), py - Math.sin(ang) * inches(2), armZ - inches(1.6)], 'z', g);
+  return { group: g, roller, rollerCenter: [rx, ry, 0] as [number, number, number], kickerNode, kickerCenter, deployAngleDeg: (ang * 180) / Math.PI };
+}
+
+/** Pivot gearbox on the frame for an intake (visual, stays on the chassis). */
+export function intakeGearbox(kit: Kit, name: string, pivot: [number, number], z: number) {
+  kit.box(`${name}_gearbox`, [pivot[0] - inches(0.5), pivot[1], z], [inches(2.2), inches(2.6), inches(1.2)], M.anodBlack());
+  kit.motor(`${name}_pivot_motor`, [pivot[0] - inches(1.6), pivot[1] - inches(0.4), z], 'x', undefined, true);
 }

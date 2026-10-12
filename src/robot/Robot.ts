@@ -125,6 +125,7 @@ export class Robot {
       }
     });
     this.hopper = this.resolveHopper();
+    if (def.storage.net) this.net = new HopperNet(this.hopper.center, this.hopper.size, def.storage.net.stretch, def.storage.net.color, this.visual);
     scene.add(this.visual);
 
     // ---- physics body
@@ -152,21 +153,49 @@ export class Robot {
         },
         { x: 0, y: 0, z: 0, w: 1 },
       );
+    desc.setCcdEnabled(true);
     this.body = world.createRigidBody(desc);
-    const bottom = Math.max(f.bumperBottom, wheelR + 0.01);
+    // Collider layout (anti-beaching):
+    //  - a low bumper ring around the perimeter that pushes FUEL and other robots,
+    //  - a raised belly/superstructure box that clears the 6.5in BUMP peak when straddling it.
+    const bb = Math.max(0.05, f.bumperBottom - 0.008);
+    const bt = f.bumperBottom + f.bumperHeight;
+    const belly = Math.max(0.1, wheelR + 0.05);
     // Collider top sits a little under the declared height so legal robots don't snag the TRENCH arm when pitching.
-    const h = Math.max(f.height - 0.015, bottom + 0.1);
-    // Main chassis + superstructure (full frame footprint incl. bumpers, up to robot height).
+    const h = Math.max(f.height - 0.015, belly + 0.1);
+    const ringMat = (d: RAPIER.ColliderDesc) =>
+      d.setDensity(0).setFriction(0.25).setFrictionCombineRule(RAPIER.CoefficientCombineRule.Min).setRestitution(MATERIAL.bumper.restitution).setCollisionGroups(groups(GROUP.ROBOT, ALL));
+    const t = f.bumperThickness;
+    const hy = (bt - bb) / 2;
+    const cy = (bt + bb) / 2;
+    const r = Math.min(0.02, hy * 0.6);
+    // Front / back bumpers (full width incl. corners) and sides.
+    for (const sx of [-1, 1])
+      world.createCollider(ringMat(RAPIER.ColliderDesc.roundCuboid(t / 2 - r, hy - r, this.halfWidth - r, r).setTranslation(sx * (this.halfLength - t / 2), cy, 0)), this.body);
+    for (const sz of [-1, 1])
+      world.createCollider(ringMat(RAPIER.ColliderDesc.roundCuboid(f.length / 2 - r, hy - r, t / 2 - r, r).setTranslation(0, cy, sz * (this.halfWidth - t / 2))), this.body);
+    // FUEL skirt: a vertical face from just above the carpet up into the bumper, hit only by loose FUEL,
+    // so balls are always pushed horizontally instead of being run over (no beaching on FUEL).
+    const skirtTop = bb + 0.03;
+    const sy = (skirtTop + 0.012) / 2;
+    const shy = (skirtTop - 0.012) / 2;
+    const skirt = (d: RAPIER.ColliderDesc) => d.setDensity(0).setFriction(0.15).setRestitution(0.05).setCollisionGroups(groups(GROUP.SKIRT, GROUP.FUEL));
+    // Thick (6cm) so a fast robot can't tunnel a ball through it in one step.
+    const st = 0.03;
+    for (const sx of [-1, 1]) world.createCollider(skirt(RAPIER.ColliderDesc.cuboid(st, shy, this.halfWidth).setTranslation(sx * (this.halfLength - st), sy, 0)), this.body);
+    for (const sz of [-1, 1]) world.createCollider(skirt(RAPIER.ColliderDesc.cuboid(this.halfLength, shy, st).setTranslation(0, sy, sz * (this.halfWidth - st))), this.body);
+    // Belly + superstructure: inside the bumpers, raised off the floor.
     world.createCollider(
-      RAPIER.ColliderDesc.roundCuboid(this.halfLength - 0.02, (h - bottom) / 2 - 0.02, this.halfWidth - 0.02, 0.02)
-        .setTranslation(0, (h + bottom) / 2, 0)
+      RAPIER.ColliderDesc.roundCuboid(this.halfLength - 0.03, (h - belly) / 2 - 0.03, this.halfWidth - 0.03, 0.03)
+        .setTranslation(0, (h + belly) / 2, 0)
         .setDensity(0)
-        .setFriction(MATERIAL.bumper.friction)
+        .setFriction(0.2)
+        .setFrictionCombineRule(RAPIER.CoefficientCombineRule.Min)
         .setRestitution(MATERIAL.bumper.restitution)
         .setCollisionGroups(groups(GROUP.ROBOT, ALL)),
       this.body,
     );
-    // Frictionless wheel spheres: the drivetrain sets velocity directly.
+    // Frictionless wheel spheres carry the robot; traction is modeled explicitly in stepDrive().
     for (const w of this.wheelPositions) {
       world.createCollider(
         RAPIER.ColliderDesc.ball(wheelR)
@@ -215,7 +244,15 @@ export class Robot {
     const hy = s.y / 2;
     const hz = s.z / 2;
     add(c.x, c.y - hy - t / 2, c.z, hx + t, t / 2, hz + t); // floor
-    add(c.x, c.y + hy + t / 2, c.z, hx + t, t / 2, hz + t); // roof / net
+    const netStretch = this.def.storage.net?.stretch ?? 0;
+    add(c.x, c.y + hy + netStretch + t / 2, c.z, hx + t, t / 2, hz + t); // roof (or the net at full stretch)
+    if (netStretch > 0) {
+      // Net sides above the walls.
+      add(c.x, c.y + hy + netStretch / 2, c.z - hz - t / 2, hx + t, netStretch / 2, t / 2);
+      add(c.x, c.y + hy + netStretch / 2, c.z + hz + t / 2, hx + t, netStretch / 2, t / 2);
+      add(c.x + hx + t / 2, c.y + hy + netStretch / 2, c.z, t / 2, netStretch / 2, hz);
+      add(c.x - hx - t / 2, c.y + hy + netStretch / 2, c.z, t / 2, netStretch / 2, hz);
+    }
     add(c.x, c.y, c.z - hz - t / 2, hx + t, hy, t / 2); // left
     add(c.x, c.y, c.z + hz + t / 2, hx + t, hy, t / 2); // right
     // Entry wall leaves a slot at the top for FUEL coming off the intake.
@@ -332,7 +369,8 @@ export class Robot {
       const i = this.stored[k];
       if (this.entering.has(i)) continue;
       const lp = this.toLocal(fuel.position(i));
-      if (Math.abs(lp.x - c.x) > s.x / 2 + m || Math.abs(lp.y - c.y) > s.y / 2 + m || Math.abs(lp.z - c.z) > s.z / 2 + m) {
+      const top = s.y / 2 + (this.def.storage.net?.stretch ?? 0);
+      if (Math.abs(lp.x - c.x) > s.x / 2 + m || lp.y - c.y > top + m || lp.y - c.y < -s.y / 2 - m || Math.abs(lp.z - c.z) > s.z / 2 + m) {
         const p = fuel.position(i);
         const v = fuel.velocity(i);
         fuel.place(i, p, v);
@@ -362,6 +400,9 @@ export class Robot {
     const t = this.body.translation();
     return new THREE.Vector3(t.x, t.y, t.z);
   }
+
+  /** Draped net over the hopper (visual), if the robot has one. */
+  private net: HopperNet | null = null;
 
   /** Field FUEL system (set by the game so teleports can carry the hopper's contents). */
   fuel: FuelSystem | null = null;
@@ -439,22 +480,55 @@ export class Robot {
     const cur = referenceToRobot(lv.x, lv.z, heading);
     const av = this.body.angvel();
     const current: ChassisSpeeds = { vx: cur.vx, vz: cur.vz, omega: av.y };
-    // Tank/mecanum wheels resist sideways sliding.
     const next = limitSpeeds(current, target, limits, dt);
-    if (d.type === 'tank') next.vz = approach(current.vz, 0, 40 * dt);
+    // Tank / mecanum wheels resist sideways sliding (scrub).
+    if (d.type === 'tank') next.vz = approach(current.vz, 0, 30 * dt);
     this.speeds = next;
-    // Robot → world.
+
+    // Traction model: the wheels can only apply as much force as friction on their normal load
+    // allows (μ·m·g shared by grounded wheels) and as much as the motors make, which fades with speed.
+    const grounded = this.groundedWheels();
+    this.grounded = grounded;
+    if (grounded === 0) return;
+    const m = this.def.frame.mass;
+    const MU = 1.15; // treaded wheels on carpet
+    const share = grounded / this.wheelPositions.length;
+    const speed = Math.hypot(cur.vx, cur.vz);
+    const motor = d.maxAccel * Math.max(0.2, 1 - speed / (d.maxSpeed * 1.15));
+    const aMax = Math.min(MU * 9.81, motor) * share;
     const c = Math.cos(heading);
     const s = Math.sin(heading);
-    const wx = next.vx * c + next.vz * s;
-    const wz = -next.vx * s + next.vz * c;
-    // Only drive when the wheels are on the ground.
-    const grounded = this.body.translation().y < 0.25 || Math.abs(lv.y) < 0.6;
-    if (grounded) {
-      this.body.setLinvel({ x: wx, y: lv.y, z: wz }, true);
-      this.body.setAngvel({ x: av.x * 0.9, y: next.omega, z: av.z * 0.9 }, true);
-    }
+    const dvx = next.vx - cur.vx;
+    const dvz = next.vz - cur.vz;
+    const dv = Math.hypot(dvx, dvz);
+    const k = dv > aMax * dt ? (aMax * dt) / dv : 1;
+    // Robot-frame Δv → world impulse.
+    const ix = (dvx * c + dvz * s) * k * m;
+    const iz = (-dvx * s + dvz * c) * k * m;
+    this.body.applyImpulse({ x: ix, y: 0, z: iz }, true);
+    // Yaw: torque limited by friction at the wheel radius from center.
+    const Iy = (m * (this.def.frame.length ** 2 + this.def.frame.width ** 2)) / 12;
+    const rw = Math.hypot(this.wheelPositions[0].x, this.wheelPositions[0].z);
+    const alphaMax = Math.min(d.maxAlpha, (MU * 9.81 * m * rw) / Iy) * share;
+    const dw = clamp(next.omega - av.y, -alphaMax * dt, alphaMax * dt);
+    this.body.applyTorqueImpulse({ x: 0, y: Iy * dw, z: 0 }, true);
   }
+
+  /** Number of wheels touching something (field or another robot) below them. */
+  grounded = 4;
+  private groundedWheels() {
+    let n = 0;
+    const filter = groups(GROUP.WHEEL, GROUP.FIELD | GROUP.ROBOT);
+    const down = { x: 0, y: -1, z: 0 };
+    for (const w of this.wheelPositions) {
+      const o = this.toWorld({ x: w.x, y: this.def.frame.wheelRadius, z: w.z }, this.rayTmp);
+      const ray = new RAPIER.Ray({ x: o.x, y: o.y, z: o.z }, down);
+      const hit = this.world.castRay(ray, this.def.frame.wheelRadius + 0.03, true, undefined, filter, undefined, this.body);
+      if (hit) n++;
+    }
+    return n;
+  }
+  private rayTmp = new THREE.Vector3();
 
   /** Heading error (rad) between the robot and the direction needed to shoot at its HUB, or null. */
   private robotAimError(ctx: RobotContext): number | null {
@@ -462,7 +536,10 @@ export class Robot {
     if (!sh) return null;
     const hub = ctx.field.hubs[this.alliance].target;
     const p = this.position;
-    const desired = Math.atan2(-(hub.z - p.z), hub.x - p.x);
+    // Aim at the led point when shooting on the move, otherwise straight at the HUB.
+    const tx = sh.sotm && Number.isFinite(this.aimPoint.x) ? this.aimPoint.x : hub.x;
+    const tz = sh.sotm && Number.isFinite(this.aimPoint.x) ? this.aimPoint.z : hub.z;
+    const desired = Math.atan2(-(tz - p.z), tx - p.x);
     // If the shooter has a turret, only rotate the robot when the target is outside its range.
     const shootDir = this.yaw + sh.yawOffset * DEG;
     let err = wrapAngle(desired - shootDir);
@@ -635,6 +712,8 @@ export class Robot {
   // ---------------------------------------------------------------- shooter
 
   private aimCache: AimResult | null = null;
+  /** Where barrel 0 is aiming on the floor plane (the HUB, led by robot velocity when shooting on the move). */
+  private aimPoint = new THREE.Vector3(Number.NaN, 0, 0);
   private aimTimer = 0;
 
   private computeAim(ctx: RobotContext): AimResult {
@@ -701,6 +780,7 @@ export class Robot {
       const err = Math.abs(relFor(tx, tz, exit) - rel);
       results.push({ yaw: rel, elev: sol.elev, speed: sol.speed, ok: sol.ok, err });
       shared ??= sol;
+      if (b === 0) this.aimPoint.set(tx, 0, tz);
       ok = ok && sol.ok;
       if (b === 0) dist = d;
     }
@@ -897,6 +977,7 @@ export class Robot {
     const r = this.body.rotation();
     this.visual.position.set(t.x, t.y, t.z);
     this.visual.quaternion.set(r.x, r.y, r.z, r.w);
+    if (this.net && this.fuel) this.net.update(this.stored.map((i) => this.toLocal(this.fuel!.position(i))));
     // Swerve modules: steer visuals if the model tagged them (optional, cosmetic).
     if (this.def.drivetrain.type === 'swerve') {
       const states = swerveModuleStates(this.speeds, this.wheelPositions);
@@ -945,4 +1026,87 @@ function gauss() {
   const u = Math.random() || 1e-9;
   const v = Math.random();
   return clamp(Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v), -3, 3);
+}
+
+/**
+ * Hopper net: a grid draped over the FUEL pile. Edges stay on the hopper rim; interior vertices
+ * rise to sit on top of the balls below them, up to the net's stretch.
+ */
+class HopperNet {
+  private mesh: THREE.Mesh;
+  private heights: Float32Array;
+  private nx = 18;
+  private nz = 14;
+  constructor(
+    private c: THREE.Vector3,
+    private s: THREE.Vector3,
+    private stretch: number,
+    color: string,
+    parent: THREE.Object3D,
+  ) {
+    const geo = new THREE.PlaneGeometry(s.x, s.z, this.nx, this.nz);
+    geo.rotateX(-Math.PI / 2);
+    geo.translate(c.x, c.y + s.y / 2, c.z);
+    const mat = new THREE.MeshStandardMaterial({ color, map: netTexture(), transparent: true, alphaTest: 0.2, side: THREE.DoubleSide, roughness: 0.9 });
+    this.mesh = new THREE.Mesh(geo, mat);
+    this.mesh.name = 'hopper_net_surface';
+    this.mesh.frustumCulled = false;
+    parent.add(this.mesh);
+    this.heights = new Float32Array((this.nx + 1) * (this.nz + 1));
+  }
+
+  update(balls: THREE.Vector3[]) {
+    const pos = this.mesh.geometry.getAttribute('position') as THREE.BufferAttribute;
+    const top = this.c.y + this.s.y / 2;
+    const R = FUEL.radius;
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i);
+      const z = pos.getZ(i);
+      const ix = i % (this.nx + 1);
+      const iz = Math.floor(i / (this.nx + 1));
+      const edge = ix === 0 || iz === 0 || ix === this.nx || iz === this.nz;
+      let h = top;
+      if (!edge) {
+        for (const b of balls) {
+          const dx = x - b.x;
+          const dz = z - b.z;
+          const d2 = dx * dx + dz * dz;
+          if (d2 < R * R * 1.6) h = Math.max(h, b.y + Math.sqrt(Math.max(0, R * R * 1.6 - d2)) * 0.8);
+        }
+        h = Math.min(h, top + this.stretch);
+      }
+      // Ease toward the target so the net settles instead of popping.
+      const cur = this.heights[i] || top;
+      const next = cur + (h - cur) * 0.35;
+      this.heights[i] = next;
+      pos.setY(i, next);
+    }
+    pos.needsUpdate = true;
+    this.mesh.geometry.computeVertexNormals();
+  }
+}
+
+let netTex: THREE.Texture | null = null;
+function netTexture() {
+  if (netTex) return netTex;
+  if (typeof document === 'undefined') return (netTex = new THREE.Texture());
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d')!;
+  g.strokeStyle = '#ffffff';
+  g.lineWidth = 3;
+  for (let k = -64; k <= 64; k += 16) {
+    g.beginPath();
+    g.moveTo(k, 0);
+    g.lineTo(k + 64, 64);
+    g.stroke();
+    g.beginPath();
+    g.moveTo(k + 64, 0);
+    g.lineTo(k, 64);
+    g.stroke();
+  }
+  netTex = new THREE.CanvasTexture(c);
+  netTex.wrapS = netTex.wrapT = THREE.RepeatWrapping;
+  netTex.repeat.set(6, 5);
+  return netTex;
 }

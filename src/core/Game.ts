@@ -9,6 +9,7 @@ import { type Alliance, totalPoints, rankingPoints } from '../game/scoring';
 import { DriverInput, type DeviceSpec } from './input/Input';
 import { CameraRig } from '../render/cameras';
 import { createRenderer, createArena } from '../render/scene';
+import { applyEnvironment } from '../render/environment';
 import { useStore, type GameMode, type PlayerSetup, type Settings, type Hud } from '../ui/store';
 import { sfx } from './audio';
 import { sideTransform } from '../field/builder';
@@ -62,6 +63,7 @@ export class Game {
     this.match = new MatchController({ autoTeleopGap: settings.autoTeleopGap });
     this.renderer = createRenderer(canvas, { shadows: settings.shadows, pixelRatio: settings.pixelRatio, antialias: settings.antialias });
     createArena(this.scene, { shadows: settings.shadows, pixelRatio: settings.pixelRatio, antialias: settings.antialias });
+    applyEnvironment(this.renderer, this.scene, 0.55);
     this.resizeObs = new ResizeObserver(() => this.resize());
     this.resizeObs.observe(canvas);
   }

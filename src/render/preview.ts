@@ -4,6 +4,7 @@ import { makeBumpers } from '../robot/bumpers';
 import { ALLIANCE_COLOR } from '../field/rebuilt/Field';
 import type { RobotDefinition } from '../robot/schema';
 import { initPhysics, createWorld } from '../physics/world';
+import { applyEnvironment } from './environment';
 import { Field } from '../field/rebuilt/Field';
 import { BUILTINS, buildBuiltin, loadRobot } from '../robots/registry';
 
@@ -45,7 +46,8 @@ export class RobotPreview {
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.shadowMap.enabled = true;
-    this.scene.add(new THREE.HemisphereLight(0xe6eeff, 0x303440, 2.0));
+    this.scene.add(new THREE.HemisphereLight(0xe6eeff, 0x303440, 1.2));
+    applyEnvironment(this.renderer, this.scene, 0.8);
     const key = new THREE.DirectionalLight(0xffffff, 2.2);
     key.position.set(2, 4, 2);
     key.castShadow = true;
@@ -166,6 +168,7 @@ export class MenuShowcase {
     await initPhysics();
     if (this.disposed) return;
     createArena(this.scene, { shadows: true, pixelRatio: 1.5, antialias: true });
+    applyEnvironment(this.renderer, this.scene, 0.55);
     const world = createWorld();
     const field = new Field(world, this.scene);
     field.stageFuel();
