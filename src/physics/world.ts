@@ -27,6 +27,10 @@ export const GROUP = {
   FUEL: 0x0004,
   WHEEL: 0x0008,
   NET: 0x0010,
+  /** Robot hopper walls: only collide with FUEL carried inside a robot. */
+  HOPPER: 0x0020,
+  /** FUEL inside a robot's hopper. */
+  STORED: 0x0040,
 };
 
 export function groups(member: number, filter: number) {

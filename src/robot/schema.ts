@@ -19,6 +19,7 @@ export const JOINT_DRIVERS = [
   'hood',
   'climber',
   'wheel',
+  'steer',
 ] as const;
 export type JointDriver = (typeof JOINT_DRIVERS)[number];
 
@@ -102,6 +103,8 @@ export const robotSchema = z.object({
       rate: z.number().positive().default(12),
       /** If true, the intake only works once the deploy joint is (mostly) out. */
       requiresDeploy: z.boolean().default(true),
+      /** Once deployed the intake latches out for the rest of the match (e.g. 4414's steel latches). */
+      latch: z.boolean().default(false),
     })
     .nullable()
     .default(null),

@@ -14,10 +14,10 @@ for (const id of ids) {
   await page.goto(url);
   await page.evaluate((id) => localStorage.clear(), id);
   await page.waitForTimeout(1500);
-  await page.getByText('Free Practice').first().click();
+  await page.getByText('Practice', { exact: true }).first().click();
   await page.waitForTimeout(800);
-  await page.getByText(new RegExp(`TEAM ${id.split('-')[1]}`)).first().click();
-  await page.getByText('Start Free Practice').click();
+  await page.getByText(new RegExp(`^${id.split('-')[1]} · `)).first().click();
+  await page.getByText('Start Practice').click();
   await page.waitForFunction(() => window.__game?.players?.length, null, { timeout: 20000 });
   await page.waitForTimeout(800);
   const r = await page.evaluate(async () => {
@@ -30,9 +30,9 @@ for (const id of ids) {
     // Shooting from several distances (robot facing the HUB; fixed shooters rely on assist rotation).
     for (const d of [2, 3.5, 5]) {
       rob.stored.splice(0).forEach((i) => g.field.fuel.hold(i, 'free'));
-      for (let k = 0; k < 10; k++) { const i = g.field.fuel.spawnHeld('stored'); rob.stored.push(i); }
       const a = (35 * Math.PI) / 180;
       rob.teleport(hub.x - d * Math.cos(a), -d * Math.sin(a), 0.3);
+      rob.preload(g.field.fuel, 10);
       rob.stats.shots = 0; rob.stats.scored = 0;
       await sleep(300);
       // hold shoot via synthetic input

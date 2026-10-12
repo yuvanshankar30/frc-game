@@ -11,11 +11,14 @@ import { CameraRig } from '../render/cameras';
 import { createRenderer, createArena } from '../render/scene';
 import { useStore, type GameMode, type PlayerSetup, type Settings, type Hud } from '../ui/store';
 import { sfx } from './audio';
-import { BotController } from '../game/bot';
 import { sideTransform } from '../field/builder';
 import { TrajectoryPreview } from '../render/trajectory';
 
 interface Player {
+  /** Smoothed rotation command (keyboard keys ramp instead of snapping). */
+  rotSmooth: number;
+  /** Sim times of recent shots (live BPS). */
+  shotTimes: number[];
   setup: PlayerSetup;
   input: DriverInput;
   robot: Robot;
@@ -23,17 +26,10 @@ interface Player {
   assist: boolean;
 }
 
-interface Bot {
-  robot: Robot;
-  ctl: BotController;
-}
-
 export interface GameConfig {
   mode: GameMode;
   players: PlayerSetup[];
   settings: Settings;
-  /** Robot ids for bot slots (match mode with bots enabled). */
-  botRobots?: string[];
 }
 
 /** Starting Z per driver station slot (blue frame). Avoids the HUB, which straddles the starting line. */
@@ -46,7 +42,6 @@ export class Game {
   field!: Field;
   readonly match: MatchController;
   players: Player[] = [];
-  bots: Bot[] = [];
   private raf = 0;
   private last = 0;
   private acc = 0;
@@ -95,24 +90,8 @@ export class Game {
       const rig = new CameraRig(setup.alliance);
       rig.station = setup.station;
       rig.setMode(config.settings.defaultCamera);
-      this.players.push({ setup, input: new DriverInput(device), robot, rig, assist: config.settings.assist });
+      this.players.push({ setup, input: new DriverInput(device), robot, rig, assist: config.settings.assist, rotSmooth: 0, shotTimes: [] });
       n++;
-    }
-    // Fill empty slots with bots.
-    if (config.mode === 'match' && config.settings.bots && config.botRobots?.length) {
-      const taken = new Set(this.players.map((p) => `${p.setup.alliance}:${p.setup.station}`));
-      let k = 0;
-      for (const alliance of ['blue', 'red'] as const) {
-        for (let st = 0; st < 3; st++) {
-          if (taken.has(`${alliance}:${st}`)) continue;
-          const id = config.botRobots[k++ % config.botRobots.length];
-          const { def, model } = await loadRobot(id);
-          if (this.disposed) return;
-          const robot = new Robot(def, model, alliance, this.world, this.scene, `b${k}`, def.team || 'BOT');
-          robot.station = st;
-          this.bots.push({ robot, ctl: new BotController(robot) });
-        }
-      }
     }
     if (config.settings.showTrajectory) this.trajectory = new TrajectoryPreview(this.scene);
     this.resetMatch();
@@ -141,13 +120,12 @@ export class Game {
     this.field.stageFuel();
     this.results = null;
     for (const r of this.allRobots()) {
-      for (const i of r.stored.splice(0)) this.field.fuel.hold(i, 'free');
+      r.stored.length = 0; // stageFuel() already reset every ball
+      r.fuel = this.field.fuel;
       this.placeRobot(r);
       r.stats.shots = r.stats.scored = r.stats.intaked = 0;
-      for (let k = 0; k < r.def.storage.preload; k++) {
-        const i = this.field.fuel.spawnHeld('stored');
-        if (i >= 0) r.stored.push(i);
-      }
+      r.intakeLatched = false;
+      r.preload(this.field.fuel, r.def.storage.preload);
     }
     this.match.phase = 'pre';
     if (mode === 'practice') {
@@ -157,6 +135,7 @@ export class Game {
       this.showBanner('FREE PRACTICE', 2);
     } else {
       this.match.start();
+      this.matchStart = this.time;
       this.showBanner('AUTO', 2);
       sfx.bell();
     }
@@ -166,7 +145,7 @@ export class Game {
   private lastPhase: Phase = 'pre';
 
   private allRobots(): Robot[] {
-    return [...this.players.map((p) => p.robot), ...this.bots.map((b) => b.robot)];
+    return this.players.map((p) => p.robot);
   }
 
   private onHubEntry(a: Alliance, ball: number) {
@@ -276,12 +255,19 @@ export class Game {
     if (!this.paused) {
       this.acc += dt;
       let steps = 0;
+      const st = this.config.settings;
       const cmds: RobotCommand[] = states.map((s, i) => {
         const p = this.players[i];
+        // Keyboard rotation ramps up (digital keys would otherwise snap to full turn rate).
+        if (p.input.device.kind === 'keyboard' && st.rotationRamp > 0) {
+          const k = Math.min(1, dt / st.rotationRamp);
+          p.rotSmooth += (s.rot - p.rotSmooth) * (s.rot === 0 ? Math.min(1, k * 2) : k);
+          if (Math.abs(p.rotSmooth) < 0.01) p.rotSmooth = 0;
+        } else p.rotSmooth = s.rot;
         return {
           x: s.x,
           z: s.z,
-          rot: s.rot,
+          rot: p.rotSmooth * st.rotationSpeed,
           refYaw: p.rig.referenceYaw(p.robot, this.config.settings.driveFrame),
           intake: s.held.intake,
           shoot: s.held.shoot,
@@ -316,33 +302,21 @@ export class Game {
   private stepSim(cmds: RobotCommand[], dt: number) {
     this.time += dt;
     const auto = this.match.phase === 'auto';
-    const info = this.match.info();
     const running = this.config.mode === 'practice' || this.match.running;
     this.players.forEach((p, i) => {
       const cmd = running || this.match.phase === 'pre' ? cmds[i] : idleCommand();
       const shooting = cmd.shoot;
       const before = p.robot.stats.shots;
       const intakedBefore = p.robot.stats.intaked;
-      p.robot.step(cmd, { field: this.field, auto, assist: p.assist }, dt);
-      if (shooting && p.robot.stats.shots > before) sfx.shoot();
+      p.robot.step(cmd, { field: this.field, auto, assist: p.assist, headingHold: this.config.settings.headingHold }, dt);
+      if (p.robot.stats.shots > before) {
+        if (shooting) sfx.shoot();
+        for (let k = before; k < p.robot.stats.shots; k++) p.shotTimes.push(this.time);
+        while (p.shotTimes.length && this.time - p.shotTimes[0] > 2) p.shotTimes.shift();
+      }
       if (p.robot.stats.intaked > intakedBefore) sfx.intake();
       if (cmd.climb && p.robot.climb !== 'none') sfx.climb();
     });
-    for (const b of this.bots) {
-      const cmd = b.ctl.command(
-        this.field,
-        {
-          hubActive: this.match.isHubActive(b.robot.alliance),
-          untilChange: this.match.untilHubChange(b.robot.alliance),
-          endgame: this.match.phase === 'endgame',
-          clock: info.clock,
-          running: this.match.running && this.match.phase !== 'pause',
-          auto,
-        },
-        dt,
-      );
-      b.robot.step(cmd, { field: this.field, auto, assist: true }, dt);
-    }
     this.field.step(dt);
     this.world.step();
     if (this.config.mode !== 'practice') {
@@ -391,6 +365,12 @@ export class Game {
     for (const p of this.players) p.rig.setAspect(w / n / h);
   }
 
+  /** Seconds since the match started, counting AUTO, the pause and TELEOP. */
+  private matchStart = 0;
+  matchElapsed() {
+    return this.match.phase === 'pre' ? 0 : this.time - this.matchStart;
+  }
+
   private pushHud(force = false) {
     void force;
     const info = this.match.info();
@@ -421,11 +401,21 @@ export class Game {
         assist: p.assist,
         shots: p.robot.stats.shots,
         scored: p.robot.stats.scored,
+        intaked: p.robot.stats.intaked,
+        intaking: p.robot.intakeOn,
+        spin: p.robot.spin,
+        ready: p.robot.shotReady,
+        bps: p.shotTimes.filter((t) => this.time - t <= 1).length,
+        speed: Math.hypot(p.robot.body.linvel().x, p.robot.body.linvel().z),
+        hubFlip: this.config.mode === 'practice' ? Infinity : this.match.untilHubChange(p.robot.alliance),
+        inZone: (p.robot.alliance === 'blue' ? -1 : 1) * p.robot.position.x > FIELD.length / 2 - FIELD.allianceZoneDepth,
       })),
       fps: this.fps,
       mode: this.config.mode,
       paused: this.paused,
       banner: this.banner && this.banner.until > this.time ? this.banner.text : null,
+      matchTime: this.matchElapsed(),
+      firstInactive: this.match.firstInactive,
       results: this.results,
     };
     useStore.getState().setHud(hud);

@@ -11,7 +11,7 @@ await page.goto(process.env.URL ?? 'http://localhost:5273/');
 await page.waitForTimeout(1200);
 await page.getByText('Garage').first().click();
 await page.waitForTimeout(600);
-await page.getByText(/^TEAM 2910$/).first().click();
+await page.getByText(/^2910 · /).first().click();
 const [dl] = await Promise.all([page.waitForEvent('download'), page.getByText('Export .frcbot').click()]);
 const file = `${out}/${dl.suggestedFilename()}`;
 await dl.saveAs(file);
@@ -23,10 +23,10 @@ console.log('garage:', cards.join(' | '));
 await page.screenshot({ path: `${out}/garage-imported.png` });
 // Play it.
 await page.getByText('← Back').click();
-await page.getByText('Free Practice').first().click();
+await page.getByText('Practice', { exact: true }).first().click();
 await page.waitForTimeout(600);
-await page.locator('.card', { hasText: 'custom CAD' }).first().click();
-await page.getByText('Start Free Practice').click();
+await page.locator('.card:has(.chip.custom)').first().click();
+await page.getByText('Start Practice').click();
 await page.waitForFunction(() => window.__game?.players?.length, null, { timeout: 30000 });
 await page.waitForTimeout(800);
 const info = await page.evaluate(async () => {

@@ -120,6 +120,31 @@ export function SettingsScreen() {
             </div>
           </div>
           <div className="field-row">
+            <div>
+              Rotation speed <span className="hint">({Math.round(settings.rotationSpeed * 100)}% of the robot's max turn rate)</span>
+              <div className="hint">Applies to J / L, Q / E and the right stick.</div>
+            </div>
+            <input type="range" min={0.3} max={1} step={0.05} value={settings.rotationSpeed} onChange={(e) => setSettings({ rotationSpeed: Number(e.target.value) })} />
+          </div>
+          <div className="field-row">
+            <div>
+              Keyboard rotation ramp <span className="hint">({settings.rotationRamp.toFixed(2)}s)</span>
+              <div className="hint">How long a rotate key takes to reach full speed. 0 is instant.</div>
+            </div>
+            <input type="range" min={0} max={0.5} step={0.02} value={settings.rotationRamp} onChange={(e) => setSettings({ rotationRamp: Number(e.target.value) })} />
+          </div>
+          <div className="field-row">
+            <div>
+              Heading hold
+              <div className="hint">Swerve and mecanum robots keep their heading when you aren't rotating, so bumps and contact don't knock them off line.</div>
+            </div>
+            <input type="checkbox" checked={settings.headingHold} onChange={(e) => setSettings({ headingHold: e.target.checked })} />
+          </div>
+          <div className="field-row">
+            <div>Minimap</div>
+            <input type="checkbox" checked={settings.minimap} onChange={(e) => setSettings({ minimap: e.target.checked })} />
+          </div>
+          <div className="field-row">
             <div>Default camera</div>
             <select value={settings.defaultCamera} onChange={(e) => setSettings({ defaultCamera: e.target.value as Settings['defaultCamera'] })}>
               {CAMERA_MODES.map((m) => (
@@ -135,13 +160,6 @@ export function SettingsScreen() {
               <div className="hint">Dashed arc showing where the next FUEL will go.</div>
             </div>
             <input type="checkbox" checked={settings.showTrajectory} onChange={(e) => setSettings({ showTrajectory: e.target.checked })} />
-          </div>
-          <div className="field-row">
-            <div>
-              Bots in matches
-              <div className="hint">Fill the empty alliance slots with simple AI robots.</div>
-            </div>
-            <input type="checkbox" checked={settings.bots} onChange={(e) => setSettings({ bots: e.target.checked })} />
           </div>
           <div className="field-row">
             <div>AUTO → TELEOP delay (s)</div>

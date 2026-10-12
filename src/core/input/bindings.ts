@@ -40,7 +40,7 @@ export interface GamepadBindings {
 export const DEFAULT_KEYBOARD: KeyboardBindings = {
   actions: {
     shoot: ['Space'],
-    intake: ['ShiftLeft', 'KeyJ'],
+    intake: ['ShiftLeft'],
     climb: ['KeyC'],
     feed: ['KeyF'],
     eject: ['KeyX'],
@@ -54,10 +54,13 @@ export const DEFAULT_KEYBOARD: KeyboardBindings = {
     back: ['KeyS'],
     left: ['KeyA'],
     right: ['KeyD'],
-    rotLeft: ['KeyQ', 'ArrowLeft'],
-    rotRight: ['KeyE', 'ArrowRight'],
+    rotLeft: ['KeyJ', 'KeyQ'],
+    rotRight: ['KeyL', 'KeyE'],
   },
 };
+
+/** Bump when default bindings change so stale saved bindings are replaced. */
+export const BINDINGS_VERSION = 2;
 
 /** Second keyboard player (local 2P without gamepads). */
 export const DEFAULT_KEYBOARD_P2: KeyboardBindings = {
@@ -65,20 +68,20 @@ export const DEFAULT_KEYBOARD_P2: KeyboardBindings = {
     shoot: ['Enter', 'NumpadEnter'],
     intake: ['ShiftRight', 'Numpad0'],
     climb: ['Slash', 'Numpad5'],
-    feed: ['Period', 'Numpad3'],
-    eject: ['Comma', 'Numpad1'],
+    feed: ['Quote', 'Numpad3'],
+    eject: ['Semicolon', 'Numpad1'],
     reset: ['Backspace'],
     camera: ['Backslash'],
     pause: [],
-    assist: ['Quote'],
+    assist: ['BracketRight'],
   },
   axes: {
-    forward: ['KeyI', 'Numpad8'],
-    back: ['KeyK', 'Numpad2'],
-    left: ['KeyJ', 'Numpad4'],
-    right: ['KeyL', 'Numpad6'],
-    rotLeft: ['KeyU', 'Numpad7'],
-    rotRight: ['KeyO', 'Numpad9'],
+    forward: ['ArrowUp', 'Numpad8'],
+    back: ['ArrowDown', 'Numpad2'],
+    left: ['ArrowLeft', 'Numpad4'],
+    right: ['ArrowRight', 'Numpad6'],
+    rotLeft: ['Comma', 'Numpad7'],
+    rotRight: ['Period', 'Numpad9'],
   },
 };
 

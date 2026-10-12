@@ -23,6 +23,7 @@ const DRIVER_HELP: Record<string, string> = {
   hood: 'Follows the hood angle (hoodMin → stowed, hoodMax → active)',
   climber: 'Moves stowed → active while climbing',
   wheel: 'Spins with drive speed',
+  steer: 'Swerve module azimuth (yaw axis), follows module angle',
 };
 
 interface TreeRow {
@@ -962,7 +963,7 @@ function MechanismsTab({
         onChange={(v) =>
           update((d) => {
             d.intake = v
-              ? { zones: [{ center: [f.length / 2 + f.bumperThickness + 0.08, 0.1, 0], size: [0.16, 0.16, f.width] }], rate: 12, requiresDeploy: d.joints.some((j) => j.driver === 'intake-deploy') }
+              ? { zones: [{ center: [f.length / 2 + f.bumperThickness + 0.08, 0.1, 0], size: [0.16, 0.16, f.width] }], rate: 12, requiresDeploy: d.joints.some((j) => j.driver === 'intake-deploy'), latch: false }
               : null;
           })
         }
@@ -973,6 +974,7 @@ function MechanismsTab({
             <input type="number" step={1} value={def.intake.rate} onChange={(e) => update((d) => void (d.intake!.rate = Math.max(1, Number(e.target.value))))} />
           </Field>
           <Check label="Needs deploy" value={def.intake.requiresDeploy} onChange={(v) => update((d) => void (d.intake!.requiresDeploy = v))} />
+          <Check label="Latches out" value={def.intake.latch} onChange={(v) => update((d) => void (d.intake!.latch = v))} />
           {def.intake.zones.map((z, i) => (
             <div key={i} className="joint-item">
               <div className="row">

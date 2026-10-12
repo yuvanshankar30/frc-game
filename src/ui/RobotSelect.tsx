@@ -2,32 +2,47 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useStore, type PlayerSetup } from './store';
 import { useRobots } from './useRobots';
 import { RobotPreview } from '../render/preview';
+import { robotThumb } from '../render/thumbs';
 import { connectedGamepads } from '../core/input/Input';
 import type { RobotDefinition } from '../robot/schema';
 
 export function RobotStats({ def }: { def: RobotDefinition }) {
   const sh = def.shooter;
-  const rows: [string, number, string][] = [
-    ['Top speed', def.drivetrain.maxSpeed / 5, `${(def.drivetrain.maxSpeed * 3.281).toFixed(1)} ft/s`],
-    ['Acceleration', def.drivetrain.maxAccel / 14, `${def.drivetrain.maxAccel.toFixed(0)} m/s²`],
-    ['Capacity', def.storage.capacity / 100, `${def.storage.capacity} FUEL`],
-    ['Fire rate', (sh?.rate ?? 0) / 30, sh ? `${sh.rate} BPS` : 'none'],
-    ['Intake', (def.intake?.rate ?? 0) / 24, def.intake ? `${def.intake.rate}/s` : 'none'],
-    ['Climb', (def.climber?.maxLevel ?? 0) / 3, def.climber?.maxLevel ? `LEVEL ${def.climber.maxLevel}` : 'none'],
+  const ftps = (def.drivetrain.maxSpeed * 3.281).toFixed(1);
+  const cells: [string, React.ReactNode][] = [
+    ['Top speed', <>{ftps}<small> ft/s</small></>],
+    ['Hopper', <>{def.storage.capacity}<small> fuel</small></>],
+    ['Fire rate', sh ? <>{sh.rate}<small> bps</small></> : '—'],
+    ['Shooter', sh ? (sh.turretMin !== null ? (sh.barrels.length > 1 ? `${sh.barrels.length}× turret` : 'Turret') : `${sh.barrels.length}-lane drum`) : '—'],
+    ['Intake', def.intake ? <>{def.intake.rate}<small> /s</small></> : '—'],
+    ['Climb', def.climber?.maxLevel ? `L${def.climber.maxLevel}` : 'None'],
+    ['Drive', def.drivetrain.type.toUpperCase()],
+    ['Frame', <>{(def.frame.length / 0.0254).toFixed(1)}×{(def.frame.width / 0.0254).toFixed(1)}<small> in</small></>],
+    ['Height', <>{(def.frame.height / 0.0254).toFixed(1)}<small> in</small></>],
   ];
   return (
-    <div>
-      {rows.map(([k, v, label]) => (
-        <div className="stat" key={k}>
+    <div className="spec">
+      {cells.map(([k, v]) => (
+        <div key={k}>
           <span>{k}</span>
-          <div className="bar">
-            <div style={{ width: `${Math.min(100, Math.max(3, v * 100))}%` }} />
-          </div>
-          <span className="val">{label}</span>
+          <b>{v}</b>
         </div>
       ))}
     </div>
   );
+}
+
+/** Rendered robot thumbnail for cards. */
+export function RobotThumb({ id }: { id: string }) {
+  const [src, setSrc] = useState<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    robotThumb(id).then((u) => alive && setSrc(u)).catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [id]);
+  return src ? <img src={src} alt="" draggable={false} /> : <div className="spinner" />;
 }
 
 export function robotChips(def: RobotDefinition) {
@@ -45,7 +60,7 @@ export function robotChips(def: RobotDefinition) {
 }
 
 export function RobotSelect() {
-  const { mode, players, setPlayers, setScreen, settings, setSettings } = useStore();
+  const { mode, players, setPlayers, setScreen } = useStore();
   const { robots, loading } = useRobots();
   const count = mode === 'twoPlayer' ? 2 : 1;
   const [active, setActive] = useState(0);
@@ -98,7 +113,7 @@ export function RobotSelect() {
   ];
   if (!pads.length) devices.push({ id: 'gamepad:0', label: 'Gamepad 1 (press a button to connect)' });
 
-  const title = mode === 'match' ? 'Match' : mode === 'practice' ? 'Free Practice' : 'Local 2-Player';
+  const title = mode === 'match' ? 'Match' : mode === 'practice' ? 'Practice' : 'Multiplayer';
 
   return (
     <div className="screen select">
@@ -107,7 +122,7 @@ export function RobotSelect() {
           <button className="btn small" onClick={() => setScreen('menu')}>
             ← Back
           </button>
-          <h1>{title}: choose your robot</h1>
+          <h1>{title} — select robot</h1>
           <div className="spacer" />
           {count > 1 && (
             <div className="seg">
@@ -124,15 +139,21 @@ export function RobotSelect() {
           {robots.map((r) => (
             <div key={r.id} className={`card ${cur?.robotId === r.id ? 'selected' : ''}`} onClick={() => update({ robotId: r.id })}>
               <div className="stripe" style={{ background: r.def.color }} />
-              <div className="team">{r.def.team ? `TEAM ${r.def.team}` : 'CUSTOM'} {r.def.author && `· ${r.def.author}`}</div>
-              <div className="name">{r.def.name}</div>
-              <div className="chips">
-                {!r.builtin && <span className="chip custom">custom CAD</span>}
-                {robotChips(r.def).map((c) => (
-                  <span className="chip" key={c}>
-                    {c}
-                  </span>
-                ))}
+              <div className="thumb">
+                <span className="num">{r.def.team || 'CSTM'}</span>
+                <RobotThumb id={r.id} />
+              </div>
+              <div className="meta">
+                <div className="team">{r.def.team ? `${r.def.team} · ` : ''}{r.def.author || 'Custom CAD'}</div>
+                <div className="name">{r.def.name}</div>
+                <div className="chips">
+                  {!r.builtin && <span className="chip custom">custom</span>}
+                  {robotChips(r.def).map((c) => (
+                    <span className="chip" key={c}>
+                      {c}
+                    </span>
+                  ))}
+                </div>
               </div>
             </div>
           ))}
@@ -149,15 +170,15 @@ export function RobotSelect() {
         <div className="side-body">
           {entry && (
             <>
-              <div className="team" style={{ color: 'var(--muted)', fontFamily: 'JetBrains Mono', fontSize: 13 }}>
-                {entry.def.team && `TEAM ${entry.def.team} · `}
+              <div className="eyebrow">
+                {entry.def.team && `Team ${entry.def.team} · `}
                 {entry.def.author}
               </div>
               <h2>{entry.def.name}</h2>
               <p className="desc">{entry.def.description}</p>
               <RobotStats def={entry.def} />
               {entry.def.highlights.length > 0 && (
-                <ul className="desc" style={{ paddingLeft: 18, marginTop: 10 }}>
+                <ul className="highlights">
                   {entry.def.highlights.map((h) => (
                     <li key={h}>{h}</li>
                   ))}
@@ -207,12 +228,6 @@ export function RobotSelect() {
               ))}
             </select>
           </div>
-          {mode === 'match' && (
-            <label className="row" style={{ fontSize: 13 }}>
-              <input type="checkbox" checked={settings.bots} onChange={(e) => setSettings({ bots: e.target.checked })} />
-              Fill the other 5 slots with bot robots (3v3)
-            </label>
-          )}
           <button className="btn primary" onClick={start} disabled={!entry}>
             Start {title}
           </button>

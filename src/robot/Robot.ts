@@ -10,6 +10,7 @@ import { ALLIANCE_COLOR } from '../field/rebuilt/Field';
 import { TOWER, FUEL, FIELD } from '../field/rebuilt/dims';
 import { DEG, clamp, wrapAngle, approach } from '../util/units';
 import { makeBumpers } from './bumpers';
+import type { FuelSystem } from '../field/fuel';
 
 export interface RobotCommand {
   /** Translation in the reference frame, -1..1 (x = forward from the reference, z = right). */
@@ -36,6 +37,8 @@ export interface RobotContext {
   assist: boolean;
   /** Infinite storage refill for practice. */
   infiniteFuel?: boolean;
+  /** Hold heading when not rotating (swerve / mecanum). */
+  headingHold?: boolean;
 }
 
 export type ClimbState = 'none' | 'aligning' | 'lifting' | 'hanging' | 'lowering';
@@ -63,6 +66,8 @@ export class Robot {
   readonly stats: RobotStats = { shots: 0, scored: 0, intaked: 0 };
   speeds: ChassisSpeeds = { vx: 0, vz: 0, omega: 0 };
   climb: ClimbState = 'none';
+  /** Heading being held while the driver isn't rotating (null = not holding yet). */
+  private holdYaw: number | null = null;
   /** Driver station slot (0..2) this robot starts in front of. */
   station = 1;
   /** TOWER level currently achieved (0 if not hanging). */
@@ -76,8 +81,14 @@ export class Robot {
   private intakeTokens = 0;
   private fireTimer = 0;
   private barrel = 0;
-  private spin = 0;
-  private intakeOn = 0;
+  /** Shooter wheel spin-up 0..1. */
+  spin = 0;
+  /** Intake activity 0..1. */
+  intakeOn = 0;
+  /** True while the shooter is spun up, aimed and allowed to fire. */
+  shotReady = false;
+  /** Latched intakes stay deployed after their first deploy. */
+  intakeLatched = false;
   turretYaw: number[] = [];
   hoodAngle = 0;
   /** Last computed shot (for HUD / debug). */
@@ -115,8 +126,7 @@ export class Robot {
         o.receiveShadow = true;
       }
     });
-    this.hopperMesh = this.makeHopperVisual();
-    if (this.hopperMesh) this.visual.add(this.hopperMesh);
+    this.hopper = this.resolveHopper();
     scene.add(this.visual);
 
     // ---- physics body
@@ -171,45 +181,167 @@ export class Robot {
         this.body,
       );
     }
+    this.buildHopperColliders();
     this.turretYaw = (def.shooter?.barrels ?? []).map(() => 0);
     if (def.shooter?.hoodMin != null) this.hoodAngle = def.shooter.hoodMin;
     else if (def.shooter) this.hoodAngle = def.shooter.angle;
   }
 
-  private hopperMesh: THREE.InstancedMesh | null = null;
+  /** Hopper volume in the robot frame (always set; derived from the frame if the def has none). */
+  readonly hopper: { center: THREE.Vector3; size: THREE.Vector3; entrySide: 1 | -1 };
+  /** Height of the open slot at the top of the entry wall that intaken FUEL flies through. */
+  static readonly ENTRY_GAP = 0.2;
 
-  /** Instanced FUEL balls packed into the hopper box, shown up to the stored count. */
-  private makeHopperVisual() {
-    const box = this.def.storage.box;
-    const cap = this.def.storage.capacity;
-    if (!box || cap <= 0) return null;
-    const d = FUEL.diameter * 0.98;
-    const nx = Math.max(1, Math.floor(box.size[0] / d));
-    const nz = Math.max(1, Math.floor(box.size[2] / d));
-    const mesh = new THREE.InstancedMesh(
-      new THREE.SphereGeometry(FUEL.radius, 10, 8),
-      new THREE.MeshStandardMaterial({ color: 0xf2c418, roughness: 0.85 }),
-      cap,
+  private resolveHopper() {
+    const f = this.def.frame;
+    const box = this.def.storage.box ?? {
+      center: [0, f.height * 0.5, 0] as [number, number, number],
+      size: [f.length * 0.75, f.height * 0.55, f.width * 0.8] as [number, number, number],
+    };
+    const zone = this.def.intake?.zones[0];
+    const entrySide: 1 | -1 = zone && zone.center[0] < box.center[0] ? -1 : 1;
+    return { center: new THREE.Vector3().fromArray(box.center), size: new THREE.Vector3().fromArray(box.size), entrySide };
+  }
+
+  /** Invisible walls around the hopper box that only carried FUEL collides with. */
+  private buildHopperColliders() {
+    const { center: c, size: s, entrySide } = this.hopper;
+    const t = 0.06;
+    const g = groups(GROUP.HOPPER, GROUP.STORED);
+    const add = (cx: number, cy: number, cz: number, hx: number, hy: number, hz: number) =>
+      this.world.createCollider(
+        RAPIER.ColliderDesc.cuboid(hx, hy, hz).setTranslation(cx, cy, cz).setDensity(0).setFriction(0.35).setRestitution(0.2).setCollisionGroups(g),
+        this.body,
+      );
+    const hx = s.x / 2;
+    const hy = s.y / 2;
+    const hz = s.z / 2;
+    add(c.x, c.y - hy - t / 2, c.z, hx + t, t / 2, hz + t); // floor
+    add(c.x, c.y + hy + t / 2, c.z, hx + t, t / 2, hz + t); // roof / net
+    add(c.x, c.y, c.z - hz - t / 2, hx + t, hy, t / 2); // left
+    add(c.x, c.y, c.z + hz + t / 2, hx + t, hy, t / 2); // right
+    // Entry wall leaves a slot at the top for FUEL coming off the intake.
+    const gap = Math.min(Robot.ENTRY_GAP, s.y * 0.6);
+    const wallH = (s.y - gap) / 2;
+    add(c.x + entrySide * (hx + t / 2), c.y - hy + wallH, c.z, t / 2, wallH, hz);
+    add(c.x - entrySide * (hx + t / 2), c.y, c.z, t / 2, hy, hz); // back
+  }
+
+  /** Robot-frame point just inside the entry slot. */
+  private entryPoint(z: number) {
+    const { center: c, size: s, entrySide } = this.hopper;
+    const r = FUEL.radius;
+    return new THREE.Vector3(
+      c.x + entrySide * (s.x / 2 - r - 0.03),
+      c.y + s.y / 2 - Math.min(Robot.ENTRY_GAP, s.y * 0.6) / 2,
+      clamp(z, c.z - s.z / 2 + r, c.z + s.z / 2 - r),
     );
-    const m = new THREE.Matrix4();
-    const x0 = box.center[0] - ((nx - 1) * d) / 2;
-    const z0 = box.center[2] - ((nz - 1) * d) / 2;
-    const y0 = box.center[1] - box.size[1] / 2 + FUEL.radius;
-    for (let i = 0; i < cap; i++) {
-      const layer = Math.floor(i / (nx * nz));
-      const k = i % (nx * nz);
-      const ix = k % nx;
-      const iz = Math.floor(k / nx);
-      const off = layer % 2 ? d / 2 : 0;
-      const x = Math.min(x0 + ix * d + off, box.center[0] + box.size[0] / 2 - FUEL.radius);
-      const z = Math.min(z0 + iz * d + off, box.center[2] + box.size[2] / 2 - FUEL.radius);
-      m.makeTranslation(x + (Math.random() - 0.5) * 0.01, y0 + layer * d * 0.82, z + (Math.random() - 0.5) * 0.01);
-      mesh.setMatrixAt(i, m);
+  }
+
+  /** Add a ball to the hopper. With `from` (world) it arcs in from there; otherwise it drops in place. */
+  addToHopper(fuel: FuelSystem, i: number, from?: THREE.Vector3) {
+    const lv = this.body.linvel();
+    if (from) {
+      const local = this.toLocal(from);
+      const target = this.entryPoint(local.z);
+      target.x -= this.hopper.entrySide * 0.12;
+      const tw = this.toWorld(target, new THREE.Vector3());
+      const T = 0.22;
+      const v = new THREE.Vector3((tw.x - from.x) / T + lv.x, (tw.y - from.y) / T + 0.5 * 9.81 * T, (tw.z - from.z) / T + lv.z);
+      fuel.store(i, from, v);
+      // Fly through the intake/bumper (no collisions) until it's inside the hopper volume.
+      fuel.colliders[i].setCollisionGroups(groups(GROUP.STORED, 0));
+      this.entering.set(i, 0);
+    } else {
+      fuel.store(i, this.toWorld(this.entryPoint(0)), { x: lv.x, y: 0, z: lv.z });
     }
-    mesh.count = 0;
-    mesh.castShadow = true;
-    mesh.frustumCulled = false;
-    return mesh;
+    this.stored.push(i);
+  }
+
+  /** Fill the hopper with `n` balls packed on its floor (preloads / refills). */
+  preload(fuel: FuelSystem, n: number) {
+    const { center: c, size: s } = this.hopper;
+    const d = FUEL.diameter * 1.04;
+    const nx = Math.max(1, Math.floor(s.x / d));
+    const nz = Math.max(1, Math.floor(s.z / d));
+    for (let k = 0; k < n; k++) {
+      const i = fuel.alloc();
+      if (i < 0) return;
+      const layer = Math.floor(k / (nx * nz));
+      const m = k % (nx * nz);
+      const off = layer % 2 ? d / 2 : 0;
+      const local = new THREE.Vector3(
+        c.x - s.x / 2 + d / 2 + (m % nx) * d + off * 0.5,
+        c.y - s.y / 2 + FUEL.radius + 0.005 + layer * d * 0.9,
+        c.z - s.z / 2 + d / 2 + Math.floor(m / nx) * d + off * 0.5,
+      );
+      fuel.store(i, this.toWorld(local), { x: 0, y: 0, z: 0 });
+      this.stored.push(i);
+    }
+  }
+
+  /** Remove the stored ball closest to a robot-frame point (e.g. a shooter's feeder). */
+  private takeStored(fuel: FuelSystem, near: THREE.Vector3Like): number {
+    const w = this.toWorld(near, new THREE.Vector3());
+    let best = -1;
+    let bestD = Infinity;
+    for (let k = 0; k < this.stored.length; k++) {
+      const p = fuel.position(this.stored[k]);
+      const dd = (p.x - w.x) ** 2 + (p.y - w.y) ** 2 * 0.3 + (p.z - w.z) ** 2;
+      if (dd < bestD) {
+        bestD = dd;
+        best = k;
+      }
+    }
+    if (best < 0) return -1;
+    const i = this.stored[best];
+    this.stored.splice(best, 1);
+    this.entering.delete(i);
+    return i;
+  }
+
+  /** FUEL in flight from the intake into the hopper → time since capture. */
+  private entering = new Map<number, number>();
+
+  /** Balls that bounced out of the hopper become loose FUEL on the field. */
+  private checkSpills(fuel: FuelSystem, dt: number) {
+    const { center: c, size: s } = this.hopper;
+    const m = 0.2;
+    const r = FUEL.radius;
+    for (const [i, t] of this.entering) {
+      const lp = this.toLocal(fuel.position(i));
+      const inside = Math.abs(lp.x - c.x) < s.x / 2 - r && Math.abs(lp.y - c.y) < s.y / 2 - r && Math.abs(lp.z - c.z) < s.z / 2 - r;
+      if (inside || t > 0.6 || fuel.state[i] !== 'stored') {
+        if (fuel.state[i] === 'stored') {
+          if (!inside) {
+            // Didn't make it in cleanly: drop it at the entry point.
+            const w = this.toWorld(this.entryPoint(lp.z), new THREE.Vector3());
+            fuel.bodies[i].setTranslation(w, true);
+          }
+          fuel.colliders[i].setCollisionGroups(groups(GROUP.STORED, GROUP.HOPPER | GROUP.STORED));
+        }
+        this.entering.delete(i);
+      } else this.entering.set(i, t + dt);
+    }
+    for (let k = this.stored.length - 1; k >= 0; k--) {
+      const i = this.stored[k];
+      if (this.entering.has(i)) continue;
+      const lp = this.toLocal(fuel.position(i));
+      if (Math.abs(lp.x - c.x) > s.x / 2 + m || Math.abs(lp.y - c.y) > s.y / 2 + m || Math.abs(lp.z - c.z) > s.z / 2 + m) {
+        const p = fuel.position(i);
+        const v = fuel.velocity(i);
+        fuel.place(i, p, v);
+        this.stored.splice(k, 1);
+      }
+    }
+  }
+
+  /** World → robot frame. */
+  toLocal(p: THREE.Vector3Like, out = new THREE.Vector3()) {
+    const t = this.body.translation();
+    const r = this.body.rotation();
+    this.tmpQ.set(r.x, r.y, r.z, r.w).invert();
+    return out.set(p.x - t.x, p.y - t.y, p.z - t.z).applyQuaternion(this.tmpQ);
   }
 
   // ---------------------------------------------------------------- pose
@@ -226,15 +358,27 @@ export class Robot {
     return new THREE.Vector3(t.x, t.y, t.z);
   }
 
-  /** Place the robot on the floor at (x, z) facing `yaw`. */
+  /** Field FUEL system (set by the game so teleports can carry the hopper's contents). */
+  fuel: FuelSystem | null = null;
+
+  /** Place the robot on the floor at (x, z) facing `yaw`. Carried FUEL moves with it. */
   teleport(x: number, z: number, yaw: number) {
     if (this.climb !== 'none') this.endClimb();
+    const carried = this.fuel ? this.stored.map((i) => this.toLocal(this.fuel!.position(i))) : [];
     this.body.setTranslation({ x, y: 0.005, z }, true);
     this.tmpQ.setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
     this.body.setRotation({ x: this.tmpQ.x, y: this.tmpQ.y, z: this.tmpQ.z, w: this.tmpQ.w }, true);
     this.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
     this.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
     this.speeds = { vx: 0, vz: 0, omega: 0 };
+    this.holdYaw = yaw;
+    if (this.fuel) {
+      this.stored.forEach((i, k) => {
+        const w = this.toWorld(carried[k], new THREE.Vector3());
+        this.fuel!.bodies[i].setTranslation({ x: w.x, y: w.y, z: w.z }, true);
+        this.fuel!.bodies[i].setLinvel({ x: 0, y: 0, z: 0 }, true);
+      });
+    }
   }
 
   /** Robot-frame point → world. */
@@ -264,11 +408,25 @@ export class Robot {
     const target = desiredSpeeds(d.type, { x: cmd.x, z: cmd.z, rot: cmd.rot }, heading - cmd.refYaw, limits, true);
 
     // Aim assist for fixed shooters (and turrets at their limit): rotate the robot toward the HUB.
+    let assisted = false;
     if (ctx.assist && cmd.shoot && this.def.shooter && this.stored.length > 0) {
       const err = this.robotAimError(ctx);
       if (err !== null && Math.abs(cmd.rot) < 0.2) {
         target.omega = clamp(err * 8, -limits.maxOmega, limits.maxOmega);
+        assisted = true;
       }
+    }
+    // Heading hold: when the driver isn't rotating, keep the current heading (resists bumps / pushes).
+    const holonomic = d.type !== 'tank';
+    if (ctx.headingHold && holonomic && !assisted && Math.abs(cmd.rot) < 0.02) {
+      if (this.holdYaw === null) {
+        if (Math.abs(this.body.angvel().y) < 0.6) this.holdYaw = heading;
+      } else {
+        const e = wrapAngle(this.holdYaw - heading);
+        target.omega = clamp(e * 7, -limits.maxOmega * 0.6, limits.maxOmega * 0.6);
+      }
+    } else {
+      this.holdYaw = null;
     }
 
     // Measure current robot-relative velocity (post-collision) and accelerate toward target.
@@ -318,14 +476,14 @@ export class Robot {
     // Intake deploy / rollers.
     const intaking = canAct && (cmd.intake || cmd.eject) && !!def.intake;
     this.intakeOn = approach(this.intakeOn, intaking ? 1 : 0, dt * 6);
+    if (def.intake?.latch && this.intakeOn > 0.9) this.intakeLatched = true;
     // Shooter spin-up.
     const wantSpin = canAct && cmd.shoot && !!def.shooter;
     this.spin = approach(this.spin, wantSpin ? 1 : 0, dt * (wantSpin ? 3.5 : 1.2));
 
-    if (ctx.infiniteFuel && this.stored.length < (def.storage.capacity || 0)) {
-      const i = ctx.field.fuel.spawnHeld('stored');
-      if (i >= 0) this.stored.push(i);
-    }
+    this.fuel = ctx.field.fuel;
+    if (ctx.infiniteFuel && this.stored.length < (def.storage.capacity || 0)) this.preload(ctx.field.fuel, 1);
+    this.checkSpills(ctx.field.fuel, dt);
 
     // Aim (turret + hood + speed).
     const aim = def.shooter ? this.computeAim(ctx) : null;
@@ -354,7 +512,7 @@ export class Robot {
     const d = jt.def;
     switch (d.driver) {
       case 'intake-deploy':
-        jt.target = this.intakeOn > 0.01 ? d.active : d.stowed;
+        jt.target = this.intakeOn > 0.01 || this.intakeLatched ? d.active : d.stowed;
         break;
       case 'intake-roller':
         jt.target = this.intakeOn;
@@ -386,6 +544,16 @@ export class Robot {
         jt.target = clamp(v / Math.max(0.1, this.def.drivetrain.maxSpeed), 0, 1) * Math.sign(this.speeds.vx || 1);
         break;
       }
+      case 'steer': {
+        // Swerve module azimuth (rad → deg), shortest rotation with wheel-flip optimization.
+        this.steerJoints ??= [...this.assembly.joints.values()].filter((j) => j.def.driver === 'steer');
+        const k = this.steerJoints.indexOf(jt);
+        const a = (this.swerveAngles[k] ?? 0) / DEG;
+        let diff = ((a - jt.value + 540) % 360) - 180;
+        if (Math.abs(diff) > 90) diff -= Math.sign(diff) * 180;
+        jt.target = jt.value + diff;
+        break;
+      }
       default:
         break;
     }
@@ -394,6 +562,7 @@ export class Robot {
   }
 
   private turretJoints: JointRT[] | null = null;
+  private steerJoints: JointRT[] | null = null;
   private turretIndex(jt: JointRT) {
     this.turretJoints ??= [...this.assembly.joints.values()].filter((j) => j.def.driver === 'turret');
     return Math.max(0, this.turretJoints.indexOf(jt));
@@ -426,8 +595,7 @@ export class Robot {
           Math.abs(lp.y - z.center[1]) <= z.size[1] / 2 + R &&
           Math.abs(lp.z - z.center[2]) <= z.size[2] / 2 + R
         ) {
-          fuel.hold(i, 'stored');
-          this.stored.push(i);
+          this.addToHopper(fuel, i, new THREE.Vector3(p.x, p.y, p.z));
           this.stats.intaked++;
           this.intakeTokens -= 1;
           break;
@@ -443,7 +611,8 @@ export class Robot {
     if (this.ejectTimer > 0 || this.stored.length === 0 || !this.def.intake) return;
     this.ejectTimer = 1 / 8;
     const z = this.def.intake.zones[0];
-    const i = this.stored.pop()!;
+    const i = this.takeStored(ctx.field.fuel, this.entryPoint(z.center[2]));
+    if (i < 0) return;
     const out = this.toWorld({ x: z.center[0] + z.size[0] / 2 + 0.12, y: Math.max(0.12, z.center[1]), z: z.center[2] });
     const fwd = this.tmpV.set(Math.cos(this.yaw), 0, -Math.sin(this.yaw)).multiplyScalar(2.5);
     const lv = this.body.linvel();
@@ -584,6 +753,7 @@ export class Robot {
     this.fireTimer -= dt;
     // Not ready: don't bank shots while spinning up, empty, or lining up.
     const ready = this.spin >= 0.85 && this.stored.length > 0 && (!ctx.assist || this.aimSettled(aim, ctx));
+    this.shotReady = ready;
     if (!ready) {
       this.fireTimer = Math.max(this.fireTimer, 0);
       return;
@@ -595,7 +765,9 @@ export class Robot {
       const b = this.barrel % sh.barrels.length;
       this.barrel++;
       const { pos, vel } = this.launchState(b, aim.barrels[b], sh.spread * DEG);
-      const i = this.stored.pop()!;
+      const ex = sh.barrels[b].exit;
+      const i = this.takeStored(ctx.field.fuel, { x: ex[0], y: this.hopper.center.y - this.hopper.size.y / 2, z: ex[2] });
+      if (i < 0) break;
       ctx.field.fuel.place(i, pos, vel, this.id);
       this.stats.shots++;
       fired++;
@@ -712,7 +884,6 @@ export class Robot {
     const r = this.body.rotation();
     this.visual.position.set(t.x, t.y, t.z);
     this.visual.quaternion.set(r.x, r.y, r.z, r.w);
-    if (this.hopperMesh) this.hopperMesh.count = Math.min(this.stored.length, this.def.storage.capacity);
     // Swerve modules: steer visuals if the model tagged them (optional, cosmetic).
     if (this.def.drivetrain.type === 'swerve') {
       const states = swerveModuleStates(this.speeds, this.wheelPositions);

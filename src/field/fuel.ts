@@ -54,7 +54,7 @@ export class FuelSystem {
           .setMass(FUEL.mass)
           .setFriction(MATERIAL.fuel.friction)
           .setRestitution(MATERIAL.fuel.restitution)
-          .setCollisionGroups(groups(GROUP.FUEL, ALL)),
+          .setCollisionGroups(FIELD_GROUPS),
         body,
       );
       body.setEnabled(false);
@@ -83,6 +83,9 @@ export class FuelSystem {
     b.setAngvel({ x: 0, y: 0, z: 0 }, true);
     this.state[i] = 'field';
     this.lastShooter[i] = shooter;
+    this.colliders[i].setCollisionGroups(FIELD_GROUPS);
+    this.bodies[i].setLinearDamping(FUEL_AIR_DAMPING);
+    this.ghostUntil[i] = -1;
     if (v && v.x * v.x + v.y * v.y + v.z * v.z > 25) {
       b.enableCcd(true);
       this.shotAt[i] = this.time;
@@ -90,6 +93,26 @@ export class FuelSystem {
     if (shooter) {
       this.colliders[i].setCollisionGroups(groups(GROUP.FUEL, ALL & ~GROUP.ROBOT));
       this.ghostUntil[i] = this.time + 0.18;
+    }
+  }
+
+  /**
+   * Put ball `i` into a robot hopper as a live physics body. It only collides with hopper
+   * walls and other stored FUEL, so it rattles around inside the robot as it drives.
+   */
+  store(i: number, p: THREE.Vector3Like, v: THREE.Vector3Like) {
+    const b = this.bodies[i];
+    b.setEnabled(true);
+    b.setTranslation({ x: p.x, y: p.y, z: p.z }, true);
+    b.setLinvel({ x: v.x, y: v.y, z: v.z }, true);
+    b.setAngvel({ x: 0, y: 0, z: 0 }, true);
+    b.setLinearDamping(0.6);
+    this.colliders[i].setCollisionGroups(STORED_GROUPS);
+    this.state[i] = 'stored';
+    this.ghostUntil[i] = -1;
+    if (this.shotAt[i] >= 0) {
+      b.enableCcd(false);
+      this.shotAt[i] = -1;
     }
   }
 
@@ -144,7 +167,7 @@ export class FuelSystem {
     // Turn CCD back off once a shot ball has had time to land.
     for (let i = 0; i < this.capacity; i++) {
       if (this.ghostUntil[i] >= 0 && this.time > this.ghostUntil[i]) {
-        this.colliders[i].setCollisionGroups(groups(GROUP.FUEL, ALL));
+        this.colliders[i].setCollisionGroups(FIELD_GROUPS);
         this.ghostUntil[i] = -1;
       }
       if (this.shotAt[i] >= 0 && this.time - this.shotAt[i] > 3) {
@@ -157,7 +180,7 @@ export class FuelSystem {
   /** Copy body transforms into the instanced mesh. */
   sync() {
     for (let i = 0; i < this.capacity; i++) {
-      if (this.state[i] !== 'field') {
+      if (this.state[i] !== 'field' && this.state[i] !== 'stored') {
         this.mesh.setMatrixAt(i, this.zero);
         continue;
       }
@@ -182,3 +205,7 @@ export class FuelSystem {
 }
 
 const ONE = new THREE.Vector3(1, 1, 1);
+/** Loose FUEL: collides with everything except hopper walls and FUEL inside robots. */
+const FIELD_GROUPS = groups(GROUP.FUEL, ALL & ~(GROUP.HOPPER | GROUP.STORED));
+/** Carried FUEL: only hopper walls and other carried FUEL. */
+const STORED_GROUPS = groups(GROUP.STORED, GROUP.HOPPER | GROUP.STORED);

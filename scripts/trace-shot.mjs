@@ -4,10 +4,10 @@ const page = await browser.newPage({ viewport: { width: 1000, height: 600 } });
 page.on('pageerror', (e) => console.log('ERR', e.message));
 await page.goto('http://localhost:5273/');
 await page.waitForTimeout(1200);
-await page.getByText('Free Practice').first().click();
+await page.getByText('Practice', { exact: true }).first().click();
 await page.waitForTimeout(500);
-await page.getByText(new RegExp(`TEAM ${process.argv[2]}`)).first().click();
-await page.getByText('Start Free Practice').click();
+await page.getByText(new RegExp(`^${process.argv[2]} · `)).first().click();
+await page.getByText('Start Practice').click();
 await page.waitForFunction(() => window.__game?.players?.length);
 await page.waitForTimeout(500);
 const r = await page.evaluate(async ([dist, NOSPREAD, NBALLS, PRE]) => {
@@ -16,7 +16,7 @@ const r = await page.evaluate(async ([dist, NOSPREAD, NBALLS, PRE]) => {
   const hub = g.field.hubs.blue.target;
   const sleep0 = (ms) => new Promise((res) => setTimeout(res, ms));
   if (PRE) {
-    for (let k = 0; k < 10; k++) rob.stored.push(f.spawnHeld('stored'));
+    rob.preload(f, 10);
     rob.teleport(hub.x - PRE * Math.cos(0.61), -PRE * Math.sin(0.61), 0.3);
     await sleep0(300);
     window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Space' }));
@@ -26,7 +26,7 @@ const r = await page.evaluate(async ([dist, NOSPREAD, NBALLS, PRE]) => {
   }
   rob.stats.shots = 0; rob.stats.scored = 0;
   rob.stored.splice(0).forEach((i) => f.hold(i, 'free'));
-  for (let k = 0; k < NBALLS; k++) rob.stored.push(f.spawnHeld('stored'));
+  rob.preload(f, NBALLS);
   rob.teleport(hub.x - dist * Math.cos(0.61), -dist * Math.sin(0.61), 0.3);
   const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
   await sleep(300);

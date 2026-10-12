@@ -8,7 +8,7 @@ await page.waitForTimeout(1200);
 await page.getByText('Garage').first().click();
 await page.waitForTimeout(800);
 for (const t of ['4414', '971', '2910', '1690', '254', '1678']) {
-  await page.getByText(new RegExp(`^TEAM ${t}$`)).first().click();
+  await page.getByText(new RegExp(`^${t} · `)).first().click();
   await page.waitForTimeout(1600);
   await page.locator('.preview canvas').screenshot({ path: `${out}/robot-${t}.png` });
 }

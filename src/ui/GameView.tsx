@@ -1,26 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import { useStore, type Hud, type PlayerHud } from './store';
+import { useStore, type Hud } from './store';
 import { Game } from '../core/Game';
-import { BUILTINS } from '../robots/registry';
-import { CAMERA_LABELS } from '../render/cameras';
+import { ScoreBar, DriverPanel, Minimap, ControlsHelp } from './Hud';
 import { keyLabel } from '../core/input/bindings';
-import { SCORING, fuelPoints, towerPoints } from '../game/scoring';
+import { SCORING } from '../game/scoring';
 import { toast } from './toast';
-
-function fmtClock(t: number) {
-  const s = Math.ceil(t);
-  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
-}
-
-const PHASE_LABEL: Record<string, string> = {
-  pre: 'READY',
-  auto: 'AUTO',
-  pause: 'AUTO ▸ TELEOP',
-  transition: 'TRANSITION',
-  shift: 'SHIFT',
-  endgame: 'END GAME',
-  post: 'FINAL',
-};
 
 export function GameView() {
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -34,8 +18,7 @@ export function GameView() {
     if (!canvas.current) return;
     const g = new Game(canvas.current, settings);
     game.current = g;
-    const bots = [...BUILTINS.map((b) => b.def.id)].sort(() => Math.random() - 0.5);
-    g.start({ mode, players, settings, botRobots: bots })
+    g.start({ mode, players, settings })
       .then(() => setLoading(false))
       .catch((e) => {
         console.error(e);
@@ -85,67 +68,34 @@ function HudView({ hud, game, onQuit, onRestart }: { hud: Hud; game: Game | null
   const n = hud.players.length;
   return (
     <div className="hud">
-      {hud.fps > 0 && <div className="fps">{hud.fps} fps</div>}
-      <div className="scorebar">
-        <div className="score-side blue">
-          <div className="pts">{hud.score.blue.total}</div>
-          <div className="sub">
-            FUEL {fuelPoints(hud.score.blue)} · TOWER {towerPoints(hud.score.blue)}
-          </div>
-          <div className={`hub-pill ${hud.hubActive.blue ? 'on' : ''}`}>{hud.hubActive.blue ? 'HUB ACTIVE' : 'HUB INACTIVE'}</div>
-        </div>
-        <div className="clock">
-          <div className="p">{practice ? 'PRACTICE' : `${PHASE_LABEL[hud.phase]}${hud.phase === 'shift' ? ` ${hud.shift}` : ''}`}</div>
-          <div className="t">{practice ? '∞' : fmtClock(hud.clock)}</div>
-          {!practice && hud.phase !== 'post' && hud.phase !== 'pre' && <div className="p">next {fmtClock(hud.phaseRemaining)}</div>}
-        </div>
-        <div className="score-side red">
-          <div className="pts">{hud.score.red.total}</div>
-          <div className="sub">
-            FUEL {fuelPoints(hud.score.red)} · TOWER {towerPoints(hud.score.red)}
-          </div>
-          <div className={`hub-pill ${hud.hubActive.red ? 'on' : ''}`}>{hud.hubActive.red ? 'HUB ACTIVE' : 'HUB INACTIVE'}</div>
-        </div>
-      </div>
+      {hud.fps > 0 && <div className="fps">{hud.fps} FPS</div>}
+      <ScoreBar hud={hud} />
       {hud.banner && <div className="banner">{hud.banner}</div>}
 
       {hud.players.map((p, i) => (
-        <PlayerPanel key={i} p={p} style={n === 1 ? { left: 16 } : { left: `calc(${(i * 100) / n}% + 16px)` }} outpost={hud.outpost[p.alliance]} />
+        <DriverPanel key={i} p={p} style={n === 1 ? { left: 14 } : { left: `calc(${(i * 100) / n}% + 14px)` }} outpost={hud.outpost[p.alliance]} />
       ))}
+      {n === 1 && settings.minimap && hud.players[0] && <Minimap game={game} alliance={hud.players[0].alliance} />}
       {n === 1 && hud.players[0]?.canClimb && hud.players[0].climbState === 'none' && (
         <div className="climb-hint">
-          Press <kbd>{keyLabel(kb.actions.climb[0] ?? 'C')}</kbd> / <kbd>Y</kbd> to climb
+          <kbd>{keyLabel(kb.actions.climb[0] ?? 'C')}</kbd> CLIMB
         </div>
       )}
-      {n === 1 && (
-        <div className="help">
-          <kbd>{keyLabel(kb.axes.forward[0])}</kbd>
-          <kbd>{keyLabel(kb.axes.left[0])}</kbd>
-          <kbd>{keyLabel(kb.axes.back[0])}</kbd>
-          <kbd>{keyLabel(kb.axes.right[0])}</kbd> drive · <kbd>{keyLabel(kb.axes.rotLeft[0])}</kbd>
-          <kbd>{keyLabel(kb.axes.rotRight[0])}</kbd> rotate
-          <br />
-          <kbd>{keyLabel(kb.actions.intake[0])}</kbd> intake · <kbd>{keyLabel(kb.actions.shoot[0])}</kbd> shoot · <kbd>{keyLabel(kb.actions.eject[0])}</kbd> eject
-          <br />
-          <kbd>{keyLabel(kb.actions.climb[0])}</kbd> climb · <kbd>{keyLabel(kb.actions.feed[0])}</kbd> HP feed · <kbd>{keyLabel(kb.actions.camera[0])}</kbd> camera
-          <br />
-          <kbd>{keyLabel(kb.actions.assist[0])}</kbd> aim assist · <kbd>{keyLabel(kb.actions.reset[0])}</kbd> reset · <kbd>Esc</kbd> pause
-        </div>
-      )}
+      {n === 1 && <ControlsHelp kb={kb} />}
 
       {hud.paused && !hud.results && (
         <div className="overlay">
-          <div className="dialog">
+          <div className="dialog pause">
             <h2>Paused</h2>
-            <div className="actions" style={{ justifyContent: 'flex-start' }}>
-              <button className="btn primary" onClick={() => game?.setPaused(false)}>
+            <div className="menu-list">
+              <button className="mi" onClick={() => game?.setPaused(false)}>
                 Resume
               </button>
-              <button className="btn" onClick={onRestart}>
+              <button className="mi" onClick={onRestart}>
                 {practice ? 'Reset field' : 'Restart match'}
               </button>
               <button
-                className="btn"
+                className="mi"
                 onClick={() => {
                   game?.resetRobot(0);
                   game?.setPaused(false);
@@ -154,7 +104,7 @@ function HudView({ hud, game, onQuit, onRestart }: { hud: Hud; game: Game | null
               >
                 Reset robot
               </button>
-              <button className="btn danger" onClick={onQuit}>
+              <button className="mi mi-danger" onClick={onQuit}>
                 Quit to menu
               </button>
             </div>
@@ -162,48 +112,6 @@ function HudView({ hud, game, onQuit, onRestart }: { hud: Hud; game: Game | null
         </div>
       )}
       {hud.results && <Results hud={hud} onQuit={onQuit} onRestart={onRestart} />}
-    </div>
-  );
-}
-
-function PlayerPanel({ p, style, outpost }: { p: PlayerHud; style: React.CSSProperties; outpost: number }) {
-  const pct = p.capacity ? (p.stored / p.capacity) * 100 : 0;
-  const acc = p.shots ? Math.round((p.scored / p.shots) * 100) : 0;
-  return (
-    <div className="player-hud" style={style}>
-      <div className="title">
-        <span className="num" style={{ background: p.alliance === 'blue' ? 'var(--blue)' : 'var(--red)' }}>
-          {p.team || 'CUSTOM'}
-        </span>
-        <span>{p.robotName}</span>
-        <span className="spacer" />
-        <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 600 }}>{CAMERA_LABELS[p.camera]}</span>
-      </div>
-      <div className="fuel-bar">
-        <div style={{ width: `${pct}%` }} />
-      </div>
-      <div className="kv">
-        <span>
-          FUEL <b>{p.stored}</b>/{p.capacity}
-        </span>
-        <span>
-          Scored <b>{p.scored}</b>/{p.shots} {p.shots > 0 && <>({acc}%)</>}
-        </span>
-        <span>
-          Dist <b>{p.distance.toFixed(1)}m</b> <span className={p.aimOk ? 'tag-ok' : 'tag-warn'}>{p.aimOk ? 'in range' : 'out of range'}</span>
-        </span>
-        <span>
-          Assist <b className={p.assist ? 'tag-ok' : 'tag-warn'}>{p.assist ? 'ON' : 'OFF'}</b>
-        </span>
-        <span>
-          HP <b>{outpost}</b>
-        </span>
-        {p.climbState !== 'none' && (
-          <span>
-            Climb <b>{p.climbLevel ? `LEVEL ${p.climbLevel}` : p.climbState}</b>
-          </span>
-        )}
-      </div>
     </div>
   );
 }
@@ -258,6 +166,32 @@ function Results({ hud, onQuit, onRestart }: { hud: Hud; onQuit: () => void; onR
           {col('blue')}
           {col('red')}
         </div>
+        <table className="res-robots">
+          <thead>
+            <tr>
+              <th>Robot</th>
+              <th>Intaked</th>
+              <th>Shots</th>
+              <th>Made</th>
+              <th>Acc</th>
+              <th>Climb</th>
+            </tr>
+          </thead>
+          <tbody>
+            {hud.players.map((p, i) => (
+              <tr key={i} className={p.alliance}>
+                <td>
+                  <b>{p.team || 'CSTM'}</b> {p.robotName}
+                </td>
+                <td>{p.intaked}</td>
+                <td>{p.shots}</td>
+                <td>{p.scored}</td>
+                <td>{p.shots ? `${Math.round((p.scored / p.shots) * 100)}%` : '—'}</td>
+                <td>{p.climbLevel ? `L${p.climbLevel}` : '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
         <div className="actions">
           <button className="btn" onClick={onQuit}>
             Menu

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useStore } from './store';
 import { useRobots } from './useRobots';
 import { RobotPreview } from '../render/preview';
-import { RobotStats, robotChips } from './RobotSelect';
+import { RobotStats, RobotThumb, robotChips } from './RobotSelect';
 import { packFrcbot, unpackFrcbot, downloadBlob } from '../cad/frcbot';
 import { saveCustomRobot, deleteCustomRobot, getCustomRobot } from '../cad/storage';
 import { exportGlb } from '../cad/loaders';
@@ -127,15 +127,21 @@ export function Garage() {
           {robots.map((r) => (
             <div key={r.id} className={`card ${entry?.id === r.id ? 'selected' : ''}`} onClick={() => setSel(r.id)}>
               <div className="stripe" style={{ background: r.def.color }} />
-              <div className="team">{r.def.team ? `TEAM ${r.def.team}` : 'CUSTOM'}</div>
-              <div className="name">{r.def.name}</div>
-              <div className="chips">
-                <span className={`chip ${r.builtin ? '' : 'custom'}`}>{r.builtin ? 'built-in' : 'custom'}</span>
-                {robotChips(r.def).map((c) => (
-                  <span className="chip" key={c}>
-                    {c}
-                  </span>
-                ))}
+              <div className="thumb">
+                <span className="num">{r.def.team || 'CSTM'}</span>
+                <RobotThumb id={r.id} />
+              </div>
+              <div className="meta">
+                <div className="team">{r.def.team ? `${r.def.team} · ` : ''}{r.def.author || 'Custom CAD'}</div>
+                <div className="name">{r.def.name}</div>
+                <div className="chips">
+                  <span className={`chip ${r.builtin ? '' : 'custom'}`}>{r.builtin ? 'built-in' : 'custom'}</span>
+                  {robotChips(r.def).map((c) => (
+                    <span className="chip" key={c}>
+                      {c}
+                    </span>
+                  ))}
+                </div>
               </div>
             </div>
           ))}

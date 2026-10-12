@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import {
-  DEFAULT_GAMEPAD, DEFAULT_KEYBOARD, DEFAULT_KEYBOARD_P2, type GamepadBindings, type KeyboardBindings,
+  BINDINGS_VERSION, DEFAULT_GAMEPAD, DEFAULT_KEYBOARD, DEFAULT_KEYBOARD_P2, type GamepadBindings, type KeyboardBindings,
 } from '../core/input/bindings';
 import type { Alliance, AllianceScore, RankingPoints } from '../game/scoring';
 import type { Phase } from '../game/MatchController';
@@ -31,8 +31,15 @@ export interface Settings {
   volume: number;
   showTrajectory: boolean;
   autoTeleopGap: number;
-  /** Fill the other alliance slots with simple bots in matches. */
-  bots: boolean;
+  /** Max keyboard / stick rotation as a fraction of the robot's top turn rate. */
+  rotationSpeed: number;
+  /** Seconds for keyboard rotation to ramp to full (smooths digital keys). */
+  rotationRamp: number;
+  /** Swerve/mecanum hold their heading when not rotating (resists bumps and pushes). */
+  headingHold: boolean;
+  /** Show the minimap. */
+  minimap: boolean;
+  bindingsVersion: number;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -48,7 +55,11 @@ export const DEFAULT_SETTINGS: Settings = {
   volume: 0.6,
   showTrajectory: true,
   autoTeleopGap: 3,
-  bots: false,
+  rotationSpeed: 0.7,
+  rotationRamp: 0.18,
+  headingHold: true,
+  minimap: true,
+  bindingsVersion: BINDINGS_VERSION,
 };
 
 export interface PlayerHud {
@@ -66,6 +77,18 @@ export interface PlayerHud {
   assist: boolean;
   shots: number;
   scored: number;
+  intaked: number;
+  /** Intake / shooter activity (0..1) and readiness, for status lights. */
+  intaking: number;
+  spin: number;
+  ready: boolean;
+  /** Balls per second over the last second. */
+  bps: number;
+  speed: number;
+  /** Seconds until this player's HUB flips (Infinity if not in a shift cycle). */
+  hubFlip: number;
+  /** Inside its own ALLIANCE ZONE (where shots can reach the HUB past the net). */
+  inZone: boolean;
 }
 
 export interface Hud {
@@ -81,6 +104,9 @@ export interface Hud {
   mode: GameMode;
   paused: boolean;
   banner: string | null;
+  /** Elapsed match time in seconds (for the shift timeline). */
+  matchTime: number;
+  firstInactive: Alliance | null;
   results: null | {
     winner: Alliance | 'tie';
     rp: Record<Alliance, RankingPoints>;
@@ -128,6 +154,12 @@ export const useStore = create<Store>((set, get) => ({
 /** Load persisted settings (merged with defaults so new fields get values). */
 export async function loadPersisted() {
   const s = await kvGet<Partial<Settings>>('settings');
+  if (s && (s.bindingsVersion ?? 1) < BINDINGS_VERSION) {
+    // Default controls changed (J/L rotate): drop stale keyboard bindings.
+    delete s.keyboard;
+    delete s.keyboard2;
+    s.bindingsVersion = BINDINGS_VERSION;
+  }
   if (s) {
     useStore.setState({
       settings: {
