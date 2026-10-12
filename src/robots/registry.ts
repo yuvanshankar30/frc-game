@@ -34,10 +34,34 @@ export interface LoadedRobot {
   model: THREE.Object3D;
 }
 
+/** Real-CAD overrides for built-ins: public/cad/<id>.frcbot (rigged in the Robot Editor), checked once. */
+const cadOverride = new Map<string, Promise<{ def: RobotDefinition; glb: ArrayBuffer } | null>>();
+function builtinCad(id: string) {
+  let p = cadOverride.get(id);
+  if (!p) {
+    p = (async () => {
+      try {
+        const r = await fetch(`${import.meta.env.BASE_URL}cad/${id}.frcbot`);
+        if (!r.ok || !(r.headers.get('content-type') ?? '').match(/zip|octet|frcbot/)) return null;
+        const { unpackFrcbot } = await import('../cad/frcbot');
+        return await unpackFrcbot(await r.arrayBuffer());
+      } catch {
+        return null;
+      }
+    })();
+    cadOverride.set(id, p);
+  }
+  return p;
+}
+
 /** Build/load the model and the full definition for a robot id. */
 export async function loadRobot(id: string): Promise<LoadedRobot> {
   const b = BUILTINS.find((x) => x.def.id === id);
-  if (b) return buildBuiltin(b);
+  if (b) {
+    const cad = typeof window !== 'undefined' ? await builtinCad(id) : null;
+    if (cad) return { def: { ...cad.def, id }, model: await loadGlb(cad.glb) };
+    return buildBuiltin(b);
+  }
   const c = await getCustomRobot(id);
   if (!c) throw new Error(`Robot ${id} not found`);
   const model = await loadGlb(c.glb);

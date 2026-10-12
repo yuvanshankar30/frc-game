@@ -89,6 +89,18 @@ Open **Robot Editor** from the menu:
    - Climber level.
 6. **Save:** checks the 2026 robot rules (perimeter, height, bumpers, mass), then **Save to Garage**, **Save & test drive**, or **Export .frcbot** to share.
 
+### Using a team's real CAD
+
+Large assemblies (100–500 MB of STEP) are best converted offline:
+
+```bash
+node scripts/cad-to-glb.mjs robot.step robot.glb --ratio 0.4   # keeps part tree + names + colors, simplifies meshes
+```
+
+Then import the GLB in the Robot Editor. Opening a built-in robot as a template and importing CAD **replaces the model
+but keeps the robot's stats and mechanisms**. Exported packages named `public/cad/builtin-<team>.frcbot` override that
+built-in robot's procedural model in game (see `public/cad/README.md` for the Onshape links of 971, 2910 and 1690).
+
 A `.frcbot` file is a zip containing `robot.json` (see `src/robot/schema.ts`) and `model.glb`. Drop one into the **Garage** to install it. Any built-in robot can also be opened in the editor as a template or exported as a `.frcbot`.
 
 ## Field
@@ -133,5 +145,7 @@ The browser tests need the dev server running on :5273 (or `URL=...`) and use yo
 | `node scripts/step-test.mjs <file.step> <dir>` | STEP import through the OpenCascade worker |
 | `node scripts/package-test.mjs <dir>` | `.frcbot` export → re-import → play, with joints intact |
 | `node scripts/robot-gallery.mjs <dir>` | Preview screenshots of every robot |
+| `node scripts/drive-test.mjs` | Drive physics: top speed, braking, BUMP crossings (no beaching), driving through FUEL, TRENCH |
+| `node scripts/robot-closeup.mjs <team> <dir>` | Close-up turntable shots of one robot |
 
 Not affiliated with FIRST® or MoSim.

@@ -211,15 +211,31 @@ export function RobotEditor() {
         setImportInfo(null);
       } else {
         const res = await importCad(files, (m) => setBusy(m));
+        const replacing = !!raw.current;
         raw.current = res.model;
         setImportInfo(res);
         setWarnings(res.warnings);
-        const name = files[0].name.replace(/\.[^.]+$/, '');
-        const d = newRobotDefinition(name);
-        d.model.scale = res.unitScale;
-        d.model.rotation = res.upAxis === 'z' ? [-90, 0, 0] : [0, 0, 0];
-        // Auto-center + fit the frame.
-        setDef(autoPlace(d, res.model));
+        if (replacing) {
+          // Replace the model but keep this robot's stats and mechanisms (e.g. a built-in opened as a template
+          // getting its team's real CAD). Joints/parts are reset because the new CAD has different part names.
+          setDef((cur) => {
+            const d = structuredClone(cur);
+            d.model.scale = res.unitScale;
+            d.model.rotation = res.upAxis === 'z' ? [-90, 0, 0] : [0, 0, 0];
+            d.model.position = [0, 0, 0];
+            d.joints = [];
+            d.parts = [];
+            return autoPlace(d, res.model, false);
+          });
+          toast('Model replaced: stats and mechanisms kept. Re-create joints for the new parts.');
+        } else {
+          const name = files[0].name.replace(/\.[^.]+$/, '');
+          const d = newRobotDefinition(name);
+          d.model.scale = res.unitScale;
+          d.model.rotation = res.upAxis === 'z' ? [-90, 0, 0] : [0, 0, 0];
+          // Auto-center + fit the frame.
+          setDef(autoPlace(d, res.model));
+        }
       }
       setRawVersion((x) => x + 1);
       setDirty(true);
@@ -1167,7 +1183,7 @@ function uniqueId(existing: string[], base: string) {
 }
 
 /** Center the model on the frame origin and drop it to the floor; fit the frame to its bounds. */
-function autoPlace(d: RobotDefinition, model: THREE.Object3D): RobotDefinition {
+function autoPlace(d: RobotDefinition, model: THREE.Object3D, fitFrame = true): RobotDefinition {
   const n = structuredClone(d);
   const g = new THREE.Group();
   const holder = new THREE.Group();
@@ -1182,5 +1198,5 @@ function autoPlace(d: RobotDefinition, model: THREE.Object3D): RobotDefinition {
   const c = box.getCenter(new THREE.Vector3());
   n.model.position = [round(-c.x), round(-box.min.y), round(-c.z)];
   const moved = box.clone().translate(new THREE.Vector3(-c.x, -box.min.y, -c.z));
-  return fitFrameToBounds(n, moved);
+  return fitFrame ? fitFrameToBounds(n, moved) : n;
 }
