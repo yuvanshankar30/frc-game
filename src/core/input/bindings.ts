@@ -1,5 +1,5 @@
 /** Digital actions a driver can trigger. Analog drive axes are handled separately. */
-export const ACTIONS = ['shoot', 'intake', 'climb', 'feed', 'eject', 'reset', 'camera', 'pause', 'assist'] as const;
+export const ACTIONS = ['shoot', 'intake', 'climb', 'feed', 'eject', 'reset', 'camera', 'pause', 'assist', 'rev'] as const;
 export type Action = (typeof ACTIONS)[number];
 
 export const ACTION_LABELS: Record<Action, string> = {
@@ -12,6 +12,7 @@ export const ACTION_LABELS: Record<Action, string> = {
   camera: 'Cycle camera',
   pause: 'Pause',
   assist: 'Toggle aim assist',
+  rev: 'Rev flywheel on/off (expert mode)',
 };
 
 export const AXES = ['forward', 'back', 'left', 'right', 'rotLeft', 'rotRight'] as const;
@@ -48,6 +49,7 @@ export const DEFAULT_KEYBOARD: KeyboardBindings = {
     camera: ['KeyV'],
     pause: ['Escape', 'KeyP'],
     assist: ['KeyT'],
+    rev: ['KeyG'],
   },
   axes: {
     forward: ['KeyW'],
@@ -74,6 +76,7 @@ export const DEFAULT_KEYBOARD_P2: KeyboardBindings = {
     camera: ['Backslash'],
     pause: [],
     assist: ['BracketRight'],
+    rev: ['BracketLeft'],
   },
   axes: {
     forward: ['ArrowUp', 'Numpad8'],
@@ -97,6 +100,7 @@ export const DEFAULT_GAMEPAD: GamepadBindings = {
     camera: [12],
     pause: [9],
     assist: [13],
+    rev: [0],
   },
   deadzone: 0.12,
 };

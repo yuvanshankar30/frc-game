@@ -30,14 +30,14 @@ export interface Settings {
   antialias: boolean;
   volume: number;
   autoTeleopGap: number;
-  /** Max keyboard / stick rotation as a fraction of the robot's top turn rate. */
-  rotationSpeed: number;
   /** Seconds for keyboard rotation to ramp to full (smooths digital keys). */
   rotationRamp: number;
   /** Swerve/mecanum hold their heading when not rotating (resists bumps and pushes). */
   headingHold: boolean;
   /** Show the minimap. */
   minimap: boolean;
+  /** Expert mode: no aim assist or heading hold; the driver revs the flywheel and runs the indexer by hand. */
+  expert: boolean;
   bindingsVersion: number;
 }
 
@@ -53,10 +53,10 @@ export const DEFAULT_SETTINGS: Settings = {
   antialias: true,
   volume: 0.6,
   autoTeleopGap: 3,
-  rotationSpeed: 0.7,
   rotationRamp: 0.18,
   headingHold: true,
   minimap: true,
+  expert: false,
   bindingsVersion: BINDINGS_VERSION,
 };
 

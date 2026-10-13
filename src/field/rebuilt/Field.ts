@@ -121,8 +121,12 @@ export class Field {
     const t = 0.05;
     const h = FIELD.guardrailHeight;
     // Long-side guardrails (polycarbonate panel + top rail), plus an invisible taller barrier for FUEL.
+    // Wall colliders are thick and extend outward from the field-side face (the panels you see are 5cm): a ball pinned
+    // between a robot and a thin wall gets resolved out the far side, and a robot hitting it at full speed sinks in.
+    const WALL = 0.6;
     for (const s of [-1, 1]) {
-      b.box({ x: 0, y: h / 2, z: s * (HW + t / 2) }, { x: FIELD.length, y: h, z: t }, { material: rail, phys: MATERIAL.polycarb, castShadow: false });
+      b.box({ x: 0, y: h / 2, z: s * (HW + t / 2) }, { x: FIELD.length, y: h, z: t }, { material: rail, phys: null, castShadow: false });
+      b.box({ x: 0, y: h / 2, z: s * (HW + WALL / 2) }, { x: FIELD.length + 2 * WALL, y: h, z: WALL }, { visible: false, phys: MATERIAL.polycarb });
       b.box({ x: 0, y: h + 0.02, z: s * (HW + t / 2) }, { x: FIELD.length, y: 0.04, z: 0.05 }, { material: steel, phys: null });
       b.box({ x: 0, y: 0.04, z: s * (HW + t / 2) }, { x: FIELD.length, y: 0.08, z: 0.06 }, { material: steel, phys: null });
       // Spectator-side containment so FUEL doesn't leave the arena entirely.
@@ -142,14 +146,18 @@ export class Field {
         [oz + gapHalf, zMax],
       ];
       const wallMat = b.material(0xdfe6ee, { opacity: 0.18, roughness: 0.1 });
+      const xc = sg * (HL + WALL / 2);
       for (const [a, c] of segs) {
         if (c - a <= 0.01) continue;
-        b.box({ x, y: wallH / 2, z: (a + c) / 2 }, { x: t, y: wallH, z: c - a }, { material: wallMat, phys: MATERIAL.polycarb, castShadow: false });
+        b.box({ x, y: wallH / 2, z: (a + c) / 2 }, { x: t, y: wallH, z: c - a }, { material: wallMat, phys: null, castShadow: false });
+        b.box({ x: xc, y: wallH / 2, z: (a + c) / 2 }, { x: WALL, y: wallH, z: c - a }, { visible: false, phys: MATERIAL.polycarb });
       }
       // Above and below the corral opening.
       const top = OUTPOST.corralBottom + OUTPOST.feedHeight;
-      b.box({ x, y: OUTPOST.corralBottom / 2, z: oz }, { x: t, y: OUTPOST.corralBottom, z: OUTPOST.corralWidth }, { material: steel, phys: MATERIAL.steel });
-      b.box({ x, y: (top + wallH) / 2, z: oz }, { x: t, y: wallH - top, z: OUTPOST.corralWidth }, { material: wallMat, phys: MATERIAL.polycarb, castShadow: false });
+      b.box({ x, y: OUTPOST.corralBottom / 2, z: oz }, { x: t, y: OUTPOST.corralBottom, z: OUTPOST.corralWidth }, { material: steel, phys: null });
+      b.box({ x: xc, y: OUTPOST.corralBottom / 2, z: oz }, { x: WALL, y: OUTPOST.corralBottom, z: OUTPOST.corralWidth }, { visible: false, phys: MATERIAL.steel });
+      b.box({ x, y: (top + wallH) / 2, z: oz }, { x: t, y: wallH - top, z: OUTPOST.corralWidth }, { material: wallMat, phys: null, castShadow: false });
+      b.box({ x: xc, y: (top + wallH) / 2, z: oz }, { x: WALL, y: wallH - top, z: OUTPOST.corralWidth }, { visible: false, phys: MATERIAL.polycarb });
       // Driver station base (alliance colored kick plate) and frame.
       b.box({ x: x + sg * 0.03, y: 0.45, z: 0 }, { x: 0.02, y: 0.9, z: FIELD.width }, { color: ALLIANCE_DARK[side], phys: null, castShadow: false });
       b.box({ x: x, y: wallH, z: 0 }, { x: 0.06, y: 0.06, z: FIELD.width }, { material: steel, phys: null });
@@ -486,6 +494,19 @@ export class Field {
           o.count++;
           continue;
         }
+      }
+      // A ball below the top of a wall can't be past it: one squeezed through by a robot goes back on the field side.
+      const R = FUEL.radius;
+      const pastSide = Math.abs(p.z) > HW - R * 0.5 && p.y < FIELD.guardrailHeight;
+      const pastEnd = Math.abs(p.x) > HL - R * 0.5 && p.y < FIELD.allianceWallHeight && Math.abs(p.z - this.outposts[p.x < 0 ? 'blue' : 'red'].corralZ) > OUTPOST.corralWidth / 2;
+      if (pastSide || pastEnd) {
+        const v = f.velocity(i);
+        f.place(
+          i,
+          { x: pastEnd ? Math.sign(p.x) * (HL - R - 0.005) : p.x, y: Math.max(p.y, R), z: pastSide ? Math.sign(p.z) * (HW - R - 0.005) : p.z },
+          { x: pastEnd ? -Math.abs(v.x) * 0.3 * Math.sign(p.x) : v.x, y: v.y, z: pastSide ? -Math.abs(v.z) * 0.3 * Math.sign(p.z) : v.z },
+        );
+        continue;
       }
       // Out of bounds: give it to the nearest human player.
       if (p.y < -1 || Math.abs(p.x) > HL + 1.5 || Math.abs(p.z) > HW + 0.55) {

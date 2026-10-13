@@ -123,27 +123,19 @@ export function Garage() {
           <input ref={fileInput} type="file" accept=".frcbot,.zip" multiple hidden onChange={(e) => e.target.files && void importFiles(e.target.files)} />
         </div>
         <div className={`dropzone ${over ? 'over' : ''}`} style={{ marginBottom: 16 }}>
-          Drop <b>.frcbot</b> packages here to add robots. Build new ones from STEP / GLB / STL / OBJ in the Robot Editor.
+          Drop a <b>.frcbot</b> package here to add a robot. To build one from CAD (STEP, GLB, STL, OBJ, 3MF, FBX), use the Robot Editor.
         </div>
         <div className="grid">
           {robots.map((r) => (
-            <div key={r.id} className={`card ${entry?.id === r.id ? 'selected' : ''}`} onClick={() => setSel(r.id)}>
+            <div key={r.id} className={`card ${entry?.id === r.id ? 'selected' : ''} ${r.builtin ? '' : 'custom'}`} onClick={() => setSel(r.id)}>
               <div className="stripe" style={{ background: r.def.color }} />
               <div className="thumb">
-                <span className="num">{r.def.team || 'CSTM'}</span>
                 <RobotThumb id={r.id} />
               </div>
               <div className="meta">
-                <div className="team">{r.def.team ? `${r.def.team} · ` : ''}{r.def.author || 'Custom CAD'}</div>
+                <div className="team">{r.def.team ? `Team ${r.def.team}` : 'Custom'}{r.def.author ? ` · ${r.def.author}` : ''}</div>
                 <div className="name">{r.def.name}</div>
-                <div className="chips">
-                  <span className={`chip ${r.builtin ? '' : 'custom'}`}>{r.builtin ? 'built-in' : 'custom'}</span>
-                  {robotChips(r.def).map((c) => (
-                    <span className="chip" key={c}>
-                      {c}
-                    </span>
-                  ))}
-                </div>
+                <div className="specline">{(r.builtin ? robotChips(r.def) : ['custom', ...robotChips(r.def)]).join(' · ')}</div>
               </div>
             </div>
           ))}

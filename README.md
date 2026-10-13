@@ -1,6 +1,6 @@
 # FRC Sim: REBUILT 2026
 
-A browser-based FRC driving simulator in the spirit of MoSim, built for the 2026 game **REBUILT**. It ships six real robots modeled from public team data. You can also import your own robot from CAD (STEP, GLB/GLTF, STL or OBJ) and map its parts to working mechanisms.
+A browser-based FRC driving simulator in the spirit of MoSim, built for the 2026 game **REBUILT**. It ships six real robots modeled from public team data. You can also import your own robot from CAD (STEP/IGES, GLB/GLTF, STL, OBJ, 3MF, FBX or PLY) and map its parts to working mechanisms.
 
 ![stack](https://img.shields.io/badge/three.js-r186-black) ![physics](https://img.shields.io/badge/physics-Rapier-orange) ![ts](https://img.shields.io/badge/TypeScript-strict-blue)
 
@@ -23,6 +23,8 @@ pnpm build      # typecheck + production build into dist/
 - **Practice:** no clock, both HUBs always active.
 - **Multiplayer:** local split screen with keyboard + keyboard, keyboard + gamepad, or two gamepads. Online multiplayer needs a game server and is planned.
 
+FUEL flies with quadratic air drag and Magnus lift from the backspin a hooded shooter puts on it, and rolls to a stop on the carpet. The shot solver integrates the same model, so the aim matches what the field does. Swerve robots turn at a competition-typical ~360°/s, and translation and rotation share the wheels' top speed: spinning while you drive slows both.
+
 FUEL inside a robot is real physics. Each robot's hopper has walls that only carried FUEL collides with. Intaken balls arc in over the bumper, slosh around as you drive, can spill out on hard hits, and the shooter feeds from the ball nearest its feeder.
 
 ## Controls (default, all rebindable in Settings)
@@ -31,19 +33,22 @@ FUEL inside a robot is real physics. Each robot's hopper has walls that only car
 |---|---|---|
 | Drive / strafe | `W A S D` | left stick |
 | Rotate | `J L` (also `Q E`) | right stick |
-| Intake (hold) | `Shift` / `J` | LT / LB |
+| Intake (hold) | `Shift` | LT / LB |
 | Shoot (hold) | `Space` | RT / RB |
 | Eject | `X` | B |
 | Climb / descend | `C` | Y |
 | Human player feed | `F` | X |
 | Cycle camera | `V` | D-pad up |
 | Toggle aim assist | `T` | D-pad down |
+| Rev flywheel (expert mode) | `G` | A |
 | Reset robot | `R` | Back |
 | Pause | `Esc` / `P` | Start |
 
-Rotation feel is adjustable in Settings: rotation speed, a keyboard ramp, and heading hold, which keeps swerve and mecanum robots on line when you aren't turning. Player 2 on the same keyboard drives with the arrow keys and rotates with `,` and `.`.
+Settings has a keyboard rotation ramp and heading hold, which keeps swerve and mecanum robots on line when you aren't turning. **Expert mode** turns off aim assist and heading hold: you rev the flywheel yourself and Shoot only runs the indexer, so FUEL fed into a wheel that isn't up to speed falls short. Player 2 on the same keyboard drives with the arrow keys and rotates with `,` and `.`.
 
-Cameras: third person, driver station, first person and overhead. In third person, controls follow the camera by default; switch to driver-station field-oriented in Settings.
+Cameras: third person, driver station, first person and overhead. In third person, controls follow the camera by default: the direction is captured when you start moving and held until you let go, so the camera swinging around behind the robot doesn't bend your path. Switch to driver-station field-oriented in Settings.
+
+Each finished match is saved to a local high score table (top 10, on this computer) shown on the results screen.
 
 **Aim assist** (on by default, like MoSim's semi-automatic play) does the following:
 - Turrets track the HUB.
@@ -70,10 +75,10 @@ Stats come from team binders, reveal threads and CAD releases. Each robot file l
 
 Open **Robot Editor** from the menu:
 
-1. **Import:** drop STEP/STP/IGES files (tessellated in the browser by OpenCascade WASM), GLB/GLTF, one or more STLs, OBJ, or a `.frcbot` package.
+1. **Import:** drop STEP/STP/IGES files (tessellated in the browser by OpenCascade WASM, coarse / normal / fine detail), GLB, GLTF (together with its `.bin` and textures), STL, OBJ, 3MF, FBX, PLY, or a `.frcbot` package. Several files at once are combined into one robot. **Remove fasteners & tiny parts** (on by default) drops screws, nuts, washers, rivets, McMaster part numbers and anything under ~8 mm, which is usually most of a robot's part count. In game, everything that moves together is merged into a few meshes, so a 20,000-part assembly still runs at 60 FPS.
 2. **Model:** pick the units and up axis (auto-guessed), rotate so the front faces +X, then click **Center & drop to floor**. **Fit frame to model** sets the frame size.
 3. **Robot:** set the name, team, frame, bumpers, mass and drivetrain (swerve, tank or mecanum) with speeds.
-4. **Joints:** select a part, click **Add joint** and place the pivot with the gizmo or by snapping to the part's center. Choose the joint type (revolute, prismatic or spin) and what drives it:
+4. **Joints:** **Auto-rig from names** creates joints for parts named like wheels, rollers, intake, turret, hood, flywheel/drum, indexer/spindexer and climber, with pivots and axes from each part's bounding box (a hood inside a turret gets the turret as its parent). Check the pivots and set the deploy angles. Or select a part, click **Add joint** and place the pivot with the gizmo or by snapping to the part's center. Choose the joint type (revolute, prismatic or spin) and what drives it:
    - intake deploy or roller
    - indexer
    - flywheel
@@ -149,7 +154,7 @@ scripts/       headless test drivers (playwright-core + system Chrome)
 
 ## Testing
 
-`pnpm test` runs the unit tests: the match state machine, shifts, scoring and RP, drivetrain kinematics, ballistics, schema, and rules checks for all built-ins.
+`pnpm test` runs the unit tests: the match state machine, shifts, scoring and RP, drivetrain kinematics, ballistics, schema, rules checks for all built-ins, and the CAD cleanup, mesh merging and auto-rig.
 
 The browser tests need the dev server running on :5273 (or `URL=...`) and use your installed Chrome through `playwright-core`:
 
@@ -166,5 +171,6 @@ The browser tests need the dev server running on :5273 (or `URL=...`) and use yo
 | `node scripts/flow-test.mjs` | Countdown, AUTO-end disable, shooting while rotating, hopper spills, FUEL under the frame |
 | `node scripts/intake-test.mjs` | Driving through FUEL with the intake on vs off: speed, missed entries, spills |
 | `node scripts/fill-test.mjs` | Feeds every robot until its hopper is full: does it reach its capacity? |
+| `node scripts/wall-test.mjs` | Full-speed hits on the guardrails and alliance walls (no sinking or climbing), FUEL bulldozed into a wall stays on the field |
 
 Not affiliated with FIRST® or MoSim.

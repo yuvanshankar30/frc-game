@@ -10,7 +10,7 @@ await page.goto(process.env.URL ?? 'http://localhost:5174/');
 await page.waitForTimeout(1000);
 await page.getByText('Practice', { exact: true }).first().click();
 await page.waitForTimeout(400);
-await page.getByText(new RegExp(`^${team} · `)).first().click();
+await page.getByText(new RegExp(`^Team ${team} · `)).first().click();
 await page.getByText('Start Practice').click();
 await page.waitForFunction(() => window.__game?.players?.length);
 await page.waitForTimeout(600);

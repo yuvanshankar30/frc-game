@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { Kit, M, mat } from './kit';
 import { swerveBase, turret, groundIntake, intakeGearbox, Rig, type BuiltinRobot } from './common';
 import { inches } from '../../util/units';
+import { TURN_RATE, TURN_ACCEL } from '../../robot/schema';
 
 /**
  * 1690 Orbit — KEPLER.
@@ -32,7 +33,7 @@ export const r1690: BuiltinRobot = {
     highlights: ['Turret + SOTM, intakes while shooting', 'Spindexer → single channel', '~13 BPS (reveal count)', 'Pocketed truss walls + arch', 'LEVEL 1 climb (team-confirmed)', 'Very low: fits under the TRENCH'],
     sources: ['Chief Delphi: FRC Orbit 1690 2026 Robot CAD Release (Onshape + x_t, render)', 'Chief Delphi: Orbit 1690 2026 Robot Reveal: "KEPLER"', 'YouTube: FRC team 1690 Orbit 2026 robot reveal "KEPLER"'],
     frame: { length: L, width: W, height: H, mass: 57, comHeight: 0.15, bumperThickness: inches(3.25), bumperHeight: inches(5) },
-    drivetrain: { type: 'swerve', maxSpeed: 4.7, maxAccel: 12, maxOmega: 11, maxAlpha: 36 },
+    drivetrain: { type: 'swerve', maxSpeed: 4.7, maxAccel: 12, maxOmega: TURN_RATE, maxAlpha: TURN_ACCEL },
     intake: {
       zones: [{ center: [L / 2 + inches(7.5), inches(3.5), 0], size: [inches(7), inches(7), W - inches(1)] }],
       rate: 18,

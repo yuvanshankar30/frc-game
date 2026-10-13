@@ -9,6 +9,13 @@ import { z } from 'zod';
 
 const vec3 = z.tuple([z.number(), z.number(), z.number()]);
 
+/**
+ * Typical competition swerve turn rate: about one rotation per second (teams cap teleop rotation well below the
+ * modules' free-speed limit so the robot stays controllable), reached in about a third of a second.
+ */
+export const TURN_RATE = 2 * Math.PI;
+export const TURN_ACCEL = 18;
+
 export const JOINT_DRIVERS = [
   'none',
   'intake-deploy',
@@ -91,8 +98,8 @@ export const robotSchema = z.object({
     type: z.enum(['swerve', 'tank', 'mecanum']),
     maxSpeed: z.number().positive().default(4.5),
     maxAccel: z.number().positive().default(9),
-    maxOmega: z.number().positive().default(9),
-    maxAlpha: z.number().positive().default(30),
+    maxOmega: z.number().positive().default(TURN_RATE),
+    maxAlpha: z.number().positive().default(TURN_ACCEL),
   }),
 
   intake: z

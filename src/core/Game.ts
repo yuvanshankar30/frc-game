@@ -244,7 +244,7 @@ export class Game {
       const p = this.players[i];
       if (s.pressed.pause) this.setPaused(!this.paused);
       if (s.pressed.camera) p.rig.cycle();
-      if (s.pressed.assist) p.assist = !p.assist;
+      if (s.pressed.assist && !this.config.settings.expert) p.assist = !p.assist;
       if (s.pressed.reset && !this.paused) this.placeRobot(p.robot);
       // The human player only feeds while play is live (any time in practice).
       if (s.pressed.feed && !this.paused && (this.config.mode === 'practice' || this.match.running)) this.field.feedFromOutpost(p.robot.alliance);
@@ -265,11 +265,12 @@ export class Game {
         return {
           x: s.x,
           z: s.z,
-          rot: p.rotSmooth * st.rotationSpeed,
-          refYaw: p.rig.referenceYaw(p.robot, this.config.settings.driveFrame),
+          rot: p.rotSmooth,
+          refYaw: p.rig.referenceYaw(p.robot, this.config.settings.driveFrame, Math.hypot(s.x, s.z) > 0.08),
           intake: s.held.intake,
           shoot: s.held.shoot,
           eject: s.held.eject,
+          rev: s.pressed.rev,
           climb: s.pressed.climb,
         };
       });
@@ -310,7 +311,8 @@ export class Game {
       const enabled = this.config.mode === 'practice' || (running && this.match.phase !== 'pause');
       const cmd = enabled ? cmds[i] : idleCommand();
       const before = p.robot.stats.shots;
-      p.robot.step(cmd, { field: this.field, auto, assist: p.assist, headingHold: this.config.settings.headingHold }, dt);
+      const expert = this.config.settings.expert;
+      p.robot.step(cmd, { field: this.field, auto, assist: p.assist && !expert, headingHold: this.config.settings.headingHold && !expert, expert }, dt);
       if (p.robot.stats.shots > before) {
         for (let k = before; k < p.robot.stats.shots; k++) p.shotTimes.push(this.time);
         while (p.shotTimes.length && this.time - p.shotTimes[0] > 2) p.shotTimes.shift();
@@ -412,7 +414,7 @@ export class Game {
         aimOk: p.robot.aimOk,
         distance: p.robot.aimDistance,
         camera: p.rig.mode,
-        assist: p.assist,
+        assist: p.assist && !this.config.settings.expert,
         shots: p.robot.stats.shots,
         scored: p.robot.stats.scored,
         intaked: p.robot.stats.intaked,

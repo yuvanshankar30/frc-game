@@ -3,13 +3,14 @@ import { RAPIER, type World, GROUP, groups, ALL, MATERIAL, ROBOT_DOMINANCE } fro
 import type { RobotDefinition } from './schema';
 import { assemble, stepJoint, jointProgress, type Assembly, type JointRT } from './assemble';
 import { desiredSpeeds, limitSpeeds, referenceToRobot, swerveModuleStates, type ChassisSpeeds } from './drivetrains/kinematics';
-import { solveShot, solveSpeed, clearsRim, flightTime, type ShotSolution, type RimSpan } from './ballistics';
+import { solveShot, solveSpeed, clearsRim, flightTime, AERO, type ShotSolution, type RimSpan } from './ballistics';
 import type { Field } from '../field/rebuilt/Field';
 import type { Alliance } from '../game/scoring';
 import { ALLIANCE_COLOR } from '../field/rebuilt/Field';
 import { TOWER, FUEL, FIELD, HUB } from '../field/rebuilt/dims';
 import { DEG, clamp, wrapAngle, approach } from '../util/units';
 import { makeBumpers } from './bumpers';
+import { mergeStatic } from '../cad/optimize';
 import type { FuelSystem } from '../field/fuel';
 
 export interface RobotCommand {
@@ -25,6 +26,8 @@ export interface RobotCommand {
   eject: boolean;
   /** Edge-triggered: start / reverse a climb. */
   climb: boolean;
+  /** Edge-triggered: toggle the flywheel (expert mode). */
+  rev?: boolean;
 }
 
 export const idleCommand = (): RobotCommand => ({ x: 0, z: 0, rot: 0, refYaw: 0, intake: false, shoot: false, eject: false, climb: false });
@@ -37,6 +40,11 @@ export interface RobotContext {
   assist: boolean;
   /** Hold heading when not rotating (swerve / mecanum). */
   headingHold?: boolean;
+  /**
+   * Expert mode: the driver revs the flywheel (toggle) and `shoot` only runs the indexer, which feeds FUEL into
+   * whatever speed the wheel is at, so feeding a wheel that isn't up to speed falls short. No aim gating.
+   */
+  expert?: boolean;
 }
 
 export type ClimbState = 'none' | 'aligning' | 'lifting' | 'hanging' | 'lowering';
@@ -84,6 +92,8 @@ export class Robot {
   private barrel = 0;
   /** Shooter wheel spin-up 0..1. */
   spin = 0;
+  /** Expert mode: flywheel toggled on. */
+  revOn = false;
   /** Intake activity 0..1. */
   intakeOn = 0;
   /** True while the shooter is spun up, aimed and allowed to fire. */
@@ -121,6 +131,11 @@ export class Robot {
     this.halfWidth = f.width / 2 + f.bumperThickness;
 
     this.assembly = assemble(def, model);
+    // Imported CAD can be thousands of parts: bake everything that moves together into a few meshes.
+    if (def.source === 'package') {
+      const a = this.assembly;
+      mergeStatic([a.chassis, ...[...a.joints.values()].map((j) => j.motion)], (o) => o.name.startsWith('joint:'));
+    }
     this.visual.add(this.assembly.root);
     this.visual.add(makeBumpers(def, ALLIANCE_COLOR[alliance], label));
     this.visual.traverse((o) => {
@@ -630,8 +645,12 @@ export class Robot {
   /** Field FUEL system (set by the game so teleports can carry the hopper's contents). */
   fuel: FuelSystem | null = null;
 
+  /** Bumped on every teleport, so cameras can cut instead of swinging over from the old pose. */
+  teleports = 0;
+
   /** Place the robot on the floor at (x, z) facing `yaw`. Carried FUEL moves with it. */
   teleport(x: number, z: number, yaw: number) {
+    this.teleports++;
     if (this.climb !== 'none') this.endClimb();
     const carried = this.fuel ? this.stored.map((i) => this.toLocal(this.fuel!.position(i))) : [];
     this.body.setTranslation({ x, y: 0.005, z }, true);
@@ -642,7 +661,7 @@ export class Robot {
     this.speeds = { vx: 0, vz: 0, omega: 0 };
     this.holdYaw = yaw;
     // A teleport isn't an acceleration: don't let the chassis sway spring see a velocity jump.
-    this.sway = { pitch: 0, roll: 0, vp: 0, vr: 0, bob: 0, lastVx: 0, lastVz: 0 };
+    this.sway = { pitch: 0, roll: 0, vp: 0, vr: 0, bob: 0 };
     this.moduleAngle = 0;
     if (this.fuel) {
       this.stored.forEach((i, k) => {
@@ -677,7 +696,9 @@ export class Robot {
   private stepDrive(cmd: RobotCommand, ctx: RobotContext, dt: number) {
     const d = this.def.drivetrain;
     const heading = this.yaw;
-    const limits = { maxSpeed: d.maxSpeed, maxAccel: d.maxAccel, maxOmega: d.maxOmega, maxAlpha: d.maxAlpha };
+    // A robot can't turn faster than its wheels can drive around the module circle.
+    const rModule = Math.hypot(this.wheelPositions[0].x, this.wheelPositions[0].z);
+    const limits = { maxSpeed: d.maxSpeed, maxAccel: d.maxAccel, maxOmega: Math.min(d.maxOmega, d.maxSpeed / rModule), maxAlpha: d.maxAlpha };
     const target = desiredSpeeds(d.type, { x: cmd.x, z: cmd.z, rot: cmd.rot }, heading - cmd.refYaw, limits, true);
 
     // Aim assist for fixed shooters (and turrets at their limit): rotate the robot toward the HUB.
@@ -703,6 +724,19 @@ export class Robot {
       this.holdYaw = null;
     }
 
+    // Desaturate: translation and rotation share the wheels' top speed. Asking for both at full stick scales the whole
+    // command down (as WPILib's desaturateWheelSpeeds does), so a robot spinning while it drives goes slower.
+    if (d.type !== 'tank') {
+      let peak = 0;
+      for (const m of swerveModuleStates(target, this.wheelPositions)) peak = Math.max(peak, m.speed);
+      if (peak > d.maxSpeed) {
+        const k = d.maxSpeed / peak;
+        target.vx *= k;
+        target.vz *= k;
+        target.omega *= k;
+      }
+    }
+
     // Measure current robot-relative velocity (post-collision) and accelerate toward target.
     const lv = this.body.linvel();
     const cur = referenceToRobot(lv.x, lv.z, heading);
@@ -717,6 +751,7 @@ export class Robot {
     // allows (μ·m·g shared by grounded wheels) and as much as the motors make, which fades with speed.
     const grounded = this.groundedWheels();
     this.grounded = grounded;
+    this.driveAccel.x = this.driveAccel.z = 0;
     if (grounded === 0) return;
     const m = this.def.frame.mass;
     const MU = 1.15; // treaded wheels on carpet
@@ -740,6 +775,8 @@ export class Robot {
     const dvz = next.vz - cur.vz;
     const dv = Math.hypot(dvx, dvz);
     const k = dv > aMax * dt ? (aMax * dt) / dv : 1;
+    this.driveAccel.x = (dvx * k) / dt;
+    this.driveAccel.z = (dvz * k) / dt;
     // Robot-frame Δv → world impulse.
     const ix = (dvx * c + dvz * s) * k * m;
     const iz = (-dvx * s + dvz * c) * k * m;
@@ -756,22 +793,24 @@ export class Robot {
   private assistTurning = false;
   /** Robot-frame heading the swerve modules currently point (rad; a module driving backwards is the same). */
   private moduleAngle = 0;
-  /** Visual chassis sway: pitch / roll (rad) and their rates, a spring driven by the robot's acceleration. */
-  private sway = { pitch: 0, roll: 0, vp: 0, vr: 0, bob: 0, lastVx: 0, lastVz: 0 };
+  /** Visual chassis sway: pitch / roll (rad) and their rates, a spring driven by the drivetrain's acceleration. */
+  private sway = { pitch: 0, roll: 0, vp: 0, vr: 0, bob: 0 };
+  /** Robot-frame acceleration the wheels applied this step (m/s²), which is what rocks the chassis on its tires. */
+  private driveAccel = { x: 0, z: 0 };
 
   /**
-   * The chassis rocks on its tires and bumpers: it squats back under acceleration, dips its nose braking, leans out
-   * in turns and jolts on hits; the carpet adds a speed-dependent rumble. Cosmetic only (the physics body stays
-   * flat); applied to the visual in sync().
+   * The chassis rocks on its tires: it squats back under acceleration, dips its nose braking and leans out in turns;
+   * the carpet adds a speed-dependent rumble. Driven by the wheels' acceleration, not the measured velocity change, so
+   * a wall or robot hit stops the robot dead instead of pitching the model into what it hit. Cosmetic only (the
+   * physics body stays flat); applied to the visual in sync().
    */
   private stepSway(dt: number) {
     const lv = this.body.linvel();
     const v = referenceToRobot(lv.x, lv.z, this.yaw);
     const w = this.sway;
-    const ax = clamp((v.vx - w.lastVx) / dt, -40, 40);
-    const az = clamp((v.vz - w.lastVz) / dt, -40, 40);
-    w.lastVx = v.vx;
-    w.lastVz = v.vz;
+    // Centripetal acceleration in turns leans the chassis out too.
+    const ax = this.driveAccel.x;
+    const az = this.driveAccel.z - v.vx * this.body.angvel().y;
     const K = 0.0016; // rad per m/s² of acceleration
     const OMEGA = 22;
     const ZETA = 0.32;
@@ -831,8 +870,10 @@ export class Robot {
     const intaking = canAct && (cmd.intake || cmd.eject) && !!def.intake;
     this.intakeOn = approach(this.intakeOn, intaking ? 1 : 0, dt * 6);
     if (def.intake?.latch && this.intakeOn > 0.9) this.intakeLatched = true;
-    // Shooter spin-up.
-    const wantSpin = canAct && cmd.shoot && !!def.shooter;
+    // Shooter spin-up: held with Shoot, or toggled by hand in expert mode.
+    if (cmd.rev) this.revOn = !this.revOn;
+    if (!ctx.expert) this.revOn = false;
+    const wantSpin = canAct && !!def.shooter && (ctx.expert ? this.revOn : cmd.shoot);
     this.spin = approach(this.spin, wantSpin ? 1 : 0, dt * (wantSpin ? 3.5 : 1.2));
 
     this.fuel = ctx.field.fuel;
@@ -856,7 +897,7 @@ export class Robot {
     }
     if (def.shooter && canAct && cmd.shoot && aim) this.runShooter(ctx, aim, dt);
     else this.shotReady = false;
-    this.feeding = canAct && !!def.shooter && cmd.shoot && this.spin > 0.8 && this.stored.length > 0;
+    this.feeding = canAct && !!def.shooter && cmd.shoot && (ctx.expert || this.spin > 0.8) && this.stored.length > 0;
     if (this.feeding) this.agitate(ctx.field.fuel, dt);
   }
 
@@ -1123,7 +1164,8 @@ export class Robot {
     return { pos, vel };
   }
 
-  private launchState(b: number, a: BarrelAim, spread: number) {
+  /** `wheel` = flywheel speed as a fraction of the solved shot speed (expert mode feeds into a slow wheel). */
+  private launchState(b: number, a: BarrelAim, spread: number, wheel = 1) {
     const sh = this.def.shooter!;
     const barrel = sh.barrels[b];
     const turret = this.turretYaw[b] ?? 0;
@@ -1136,14 +1178,17 @@ export class Robot {
     const dirYaw = this.yaw + sh.yawOffset * DEG + turret + gauss() * spread;
     const hood = sh.hoodMin !== null ? this.hoodAngle * DEG : a.elev;
     const elev = hood + gauss() * spread;
-    const speed = a.speed * (1 + gauss() * (spread > 0 ? 0.01 : 0));
+    const speed = a.speed * wheel * (1 + gauss() * (spread > 0 ? 0.01 : 0));
     const ev = this.pointVelocity(pos);
     const vel = new THREE.Vector3(
       Math.cos(elev) * Math.cos(dirYaw) * speed + ev.x,
       Math.sin(elev) * speed + ev.y,
       -Math.cos(elev) * Math.sin(dirYaw) * speed + ev.z,
     );
-    return { pos, vel };
+    // Backspin from the hood: spin axis horizontal, perpendicular to the shot (ω̂ × v points up).
+    const w = (AERO.launchSpin * speed) / FUEL.radius;
+    const spin = new THREE.Vector3(Math.sin(dirYaw) * w, 0, Math.cos(dirYaw) * w);
+    return { pos, vel, spin };
   }
 
   /** Velocity of a world point rigidly attached to the robot (linear + ω × r). */
@@ -1160,8 +1205,9 @@ export class Robot {
   private runShooter(ctx: RobotContext, aim: AimResult, dt: number) {
     const sh = this.def.shooter!;
     this.fireTimer -= dt;
-    // Not ready: don't bank shots while spinning up, empty, or lining up.
-    const ready = this.spin >= 0.85 && this.stored.length > 0 && (!ctx.assist || this.aimSettled(aim, ctx));
+    // Not ready: don't bank shots while spinning up, empty, or lining up. In expert mode the indexer feeds whenever
+    // it's told to, into whatever the wheel is doing (a stalled wheel just drops FUEL out).
+    const ready = ctx.expert ? this.stored.length > 0 : this.spin >= 0.85 && this.stored.length > 0 && (!ctx.assist || this.aimSettled(aim, ctx));
     this.shotReady = ready;
     if (!ready) {
       this.fireTimer = Math.max(this.fireTimer, 0);
@@ -1173,11 +1219,11 @@ export class Robot {
       this.fireTimer += 1 / sh.rate;
       const b = this.barrel % sh.barrels.length;
       this.barrel++;
-      const { pos, vel } = this.launchState(b, aim.barrels[b], sh.spread * DEG);
+      const { pos, vel, spin } = this.launchState(b, aim.barrels[b], sh.spread * DEG, ctx.expert ? this.spin : 1);
       const ex = sh.barrels[b].exit;
       const i = this.takeStored(ctx.field.fuel, { x: ex[0], y: this.hopper.center.y - this.hopper.size.y / 2, z: ex[2] });
       if (i < 0) break;
-      ctx.field.fuel.place(i, pos, vel, this.id);
+      ctx.field.fuel.place(i, pos, vel, this.id, spin);
       this.stats.shots++;
       fired++;
     }

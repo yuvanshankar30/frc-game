@@ -8,9 +8,9 @@ const URL = process.env.URL ?? 'http://localhost:5174/';
 async function start(mode, team) {
   await page.goto(URL);
   await page.waitForTimeout(1200);
-  await page.getByText(mode, { exact: true }).first().click();
+  await page.getByText(mode === 'Match' ? 'Play a match' : mode, { exact: true }).first().click();
   await page.waitForTimeout(500);
-  await page.getByText(new RegExp(`^${team} · `)).first().click();
+  await page.getByText(new RegExp(`^Team ${team} · `)).first().click();
   await page.getByText(`Start ${mode}`).click();
   await page.waitForFunction(() => window.__game?.players?.length);
   await page.waitForTimeout(300);

@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { Kit, M, mat } from './kit';
 import { swerveBase, groundIntake, intakeGearbox, Rig, type BuiltinRobot } from './common';
 import { inches } from '../../util/units';
+import { TURN_RATE, TURN_ACCEL } from '../../robot/schema';
 
 /**
  * 971 Spartan Robotics — Mixtape.
@@ -162,7 +163,7 @@ export const r971: BuiltinRobot = {
     highlights: ['Dual independent turrets (~210° each)', 'Omni-wheel separator → two streams', 'Slapdown intake slides the hopper out', 'Shoot-on-the-move', 'LEVEL 1 telescoping climber', 'Fits under the TRENCH'],
     sources: ['971 Mixtape Technical Documentation 2026 (drivetrain, climber, intake, indexer, turrets, shooter)', '971 Onshape CAD release (top / iso / side / front / rear views)', 'github.com/frc971/971-second-robot-2026 (robot code + photo)'],
     frame: { length: L, width: W, height: H, mass: 59, comHeight: 0.16, bumperThickness: inches(3.5), bumperHeight: inches(5) },
-    drivetrain: { type: 'swerve', maxSpeed: 4.5, maxAccel: 10, maxOmega: 10, maxAlpha: 32 },
+    drivetrain: { type: 'swerve', maxSpeed: 4.5, maxAccel: 10, maxOmega: TURN_RATE, maxAlpha: TURN_ACCEL },
     intake: {
       zones: [{ center: [L / 2 + inches(7.5), inches(3.5), 0], size: [inches(6), inches(7), W - inches(2)] }],
       rate: 14,

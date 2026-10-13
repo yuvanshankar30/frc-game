@@ -11,7 +11,7 @@ for (const t of ids) {
   await page.waitForTimeout(1200);
   await page.getByText('Practice', { exact: true }).first().click();
   await page.waitForTimeout(500);
-  await page.getByText(new RegExp(`^${t} · `)).first().click();
+  await page.getByText(new RegExp(`^Team ${t} · `)).first().click();
   await page.getByText('Start Practice').click();
   await page.waitForFunction(() => window.__game?.players?.length);
   await page.waitForTimeout(500);

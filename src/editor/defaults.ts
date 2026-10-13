@@ -1,5 +1,6 @@
 import type * as THREE from 'three';
 import { parseRobot, type RobotDefinition } from '../robot/schema';
+import { TURN_RATE, TURN_ACCEL } from '../robot/schema';
 
 /** A sensible starting definition for a freshly imported robot. */
 export function newRobotDefinition(name: string): RobotDefinition {
@@ -11,7 +12,7 @@ export function newRobotDefinition(name: string): RobotDefinition {
     color: '#f2c418',
     description: 'Custom robot imported from CAD.',
     frame: { length: L, width: W, height: 0.55 },
-    drivetrain: { type: 'swerve', maxSpeed: 4.4, maxAccel: 10, maxOmega: 10, maxAlpha: 30 },
+    drivetrain: { type: 'swerve', maxSpeed: 4.4, maxAccel: 10, maxOmega: TURN_RATE, maxAlpha: TURN_ACCEL },
     intake: { zones: [{ center: [L / 2 + 0.16, 0.1, 0], size: [0.16, 0.16, W - 0.05] }], rate: 12, requiresDeploy: false },
     storage: { capacity: 40, preload: 8, box: { center: [0, 0.25, 0], size: [L * 0.75, 0.25, W * 0.8] } },
     shooter: { barrels: [{ exit: [-0.1, 0.6, 0], pivot: [0, 0, 0] }], angle: 60, minSpeed: 4, maxSpeed: 15, rate: 10 },

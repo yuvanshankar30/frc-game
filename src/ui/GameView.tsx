@@ -5,6 +5,7 @@ import { ScoreBar, DriverPanel, Minimap, ControlsHelp } from './Hud';
 import { keyLabel } from '../core/input/bindings';
 import { SCORING } from '../game/scoring';
 import { toast } from './toast';
+import { recordHighScore, type HighScore } from '../game/highscores';
 
 export function GameView() {
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -118,6 +119,23 @@ function HudView({ hud, game, onQuit, onRestart }: { hud: Hud; game: Game | null
 
 function Results({ hud, onQuit, onRestart }: { hud: Hud; onQuit: () => void; onRestart: () => void }) {
   const r = hud.results!;
+  const expert = useStore((st) => st.settings.expert);
+  const [best, setBest] = useState<{ rank: number | null; table: HighScore[] } | null>(null);
+  const saved = useRef(false);
+  useEffect(() => {
+    if (saved.current) return;
+    saved.current = true;
+    // Each driver's alliance score goes in this computer's high score table (one entry per player).
+    void (async () => {
+      let res: { rank: number | null; table: HighScore[] } | null = null;
+      for (const p of hud.players) {
+        const out = await recordHighScore({ score: hud.score[p.alliance].total, robot: p.robotName, team: p.team, expert, at: Date.now() });
+        if (!res || (out.rank ?? 99) < (res.rank ?? 99)) res = out;
+        else res.table = out.table;
+      }
+      setBest(res);
+    })();
+  }, [hud, expert]);
   const col = (a: 'blue' | 'red') => {
     const s = hud.score[a];
     const rp = r.rp[a];
@@ -192,6 +210,22 @@ function Results({ hud, onQuit, onRestart }: { hud: Hud; onQuit: () => void; onR
             ))}
           </tbody>
         </table>
+        {best && (
+          <div className="highscores">
+            <div className="hs-title">
+              High scores on this computer{best.rank === 1 ? ' (new best!)' : best.rank ? ` (this match is #${best.rank})` : ''}
+            </div>
+            <ol>
+              {best.table.slice(0, 5).map((h, i) => (
+                <li key={`${h.at}-${i}`}>
+                  <b>{h.score}</b> {h.team ? `${h.team} ` : ''}
+                  {h.robot}
+                  {h.expert ? ' · expert' : ''} <span className="note">{new Date(h.at).toLocaleDateString()}</span>
+                </li>
+              ))}
+            </ol>
+          </div>
+        )}
         <div className="actions">
           <button className="btn" onClick={onQuit}>
             Menu

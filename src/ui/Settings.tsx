@@ -121,13 +121,6 @@ export function SettingsScreen() {
           </div>
           <div className="field-row">
             <div>
-              Rotation speed <span className="hint">({Math.round(settings.rotationSpeed * 100)}% of the robot's max turn rate)</span>
-              <div className="hint">Applies to J / L, Q / E and the right stick.</div>
-            </div>
-            <input type="range" min={0.3} max={1} step={0.05} value={settings.rotationSpeed} onChange={(e) => setSettings({ rotationSpeed: Number(e.target.value) })} />
-          </div>
-          <div className="field-row">
-            <div>
               Keyboard rotation ramp <span className="hint">({settings.rotationRamp.toFixed(2)}s)</span>
               <div className="hint">How long a rotate key takes to reach full speed. 0 is instant.</div>
             </div>
@@ -139,6 +132,16 @@ export function SettingsScreen() {
               <div className="hint">Swerve and mecanum robots keep their heading when you aren't rotating, so bumps and contact don't knock them off line.</div>
             </div>
             <input type="checkbox" checked={settings.headingHold} onChange={(e) => setSettings({ headingHold: e.target.checked })} />
+          </div>
+          <div className="field-row">
+            <div>
+              Expert mode
+              <div className="hint">
+                No aim assist or heading hold. Rev the flywheel yourself (G / gamepad A toggles it) and hold Shoot to run the indexer. FUEL fed into a
+                wheel that isn't up to speed falls short.
+              </div>
+            </div>
+            <input type="checkbox" checked={settings.expert} onChange={(e) => setSettings({ expert: e.target.checked })} />
           </div>
           <div className="field-row">
             <div>Minimap</div>

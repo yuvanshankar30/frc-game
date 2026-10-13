@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { Kit, M, mat } from './kit';
 import { swerveBase, groundIntake, intakeGearbox, Rig, type BuiltinRobot } from './common';
 import { inches } from '../../util/units';
+import { TURN_RATE, TURN_ACCEL } from '../../robot/schema';
 
 /**
  * 2910 Jack in the Bot — Re•Blitz (2026 World Championship Finalist, Newton captain).
@@ -38,7 +39,7 @@ export const r2910: BuiltinRobot = {
     highlights: ['2026 Championship Finalist', '30+ BPS (34 sustained), 4 balls wide', 'Shoots forward over the hopper', 'Slapdown with 2x2 bash bar', 'Tinted one-piece sliding hopper', 'No climber (none in code)'],
     sources: ['2910 Tech Binder 2026: Reblitz (Chief Delphi CAD + tech binder release)', 'github.com/FRCTeam2910/2026CompetitionRobot-Public (Constants.java)', 'frcteam2910.org: "We Rebuilt our Robot. Then we went to Einstein."'],
     frame: { length: L, width: W, height: H, mass: 61, comHeight: 0.16, bumperThickness: inches(4), bumperHeight: inches(5.5) },
-    drivetrain: { type: 'swerve', maxSpeed: 3.9, maxAccel: 11, maxOmega: 10, maxAlpha: 34 },
+    drivetrain: { type: 'swerve', maxSpeed: 3.9, maxAccel: 11, maxOmega: TURN_RATE, maxAlpha: TURN_ACCEL },
     intake: {
       zones: [{ center: [L / 2 + inches(9), inches(3.5), 0], size: [inches(7), inches(7), W - inches(1)] }],
       rate: 24,

@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { Kit, M, mat, decalTex } from './kit';
 import { swerveBase, Rig, type BuiltinRobot } from './common';
 import { inches } from '../../util/units';
+import { TURN_RATE, TURN_ACCEL } from '../../robot/schema';
 
 /**
  * 4414 HighTide — RIPCURRENT (2026 World Champions, Daly division captain).
@@ -42,7 +43,7 @@ export const r4414: BuiltinRobot = {
     highlights: ['2026 World Champion (Daly captain)', 'Latching rack intake + 85+ FUEL hopper', 'Dye Rotor → single stream ~14 BPS', '55.7:1 turret, 4× X44 flywheel, SOTM', 'Fits under the TRENCH', 'No climber'],
     sources: ['4414 2026 Technical Binder: 2026.team4414.com (CAD renders, Dye Rotor V10, Shooter V11, subsystem notes)', 'Chief Delphi: Team 4414 HighTide 2026 Tech Binder (RIPCURRENT)'],
     frame: { length: L, width: W, height: H, mass: 60, comHeight: 0.17, bumperThickness: inches(3.5), bumperHeight: inches(5.5) },
-    drivetrain: { type: 'swerve', maxSpeed: 4.1, maxAccel: 10, maxOmega: 10, maxAlpha: 32 },
+    drivetrain: { type: 'swerve', maxSpeed: 4.1, maxAccel: 10, maxOmega: TURN_RATE, maxAlpha: TURN_ACCEL },
     intake: {
       zones: [{ center: [L / 2 + inches(3.5) + EXT - inches(1), inches(3.2), 0], size: [inches(6), inches(6.5), W - inches(3)] }],
       rate: 16,

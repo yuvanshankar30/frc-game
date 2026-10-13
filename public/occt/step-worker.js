@@ -4,14 +4,14 @@ importScripts('occt-import-js.js');
 let occtPromise = null;
 
 onmessage = async (ev) => {
-  const { id, format, buffer } = ev.data;
+  const { id, format, buffer, deflection } = ev.data;
   try {
     occtPromise ??= occtimportjs({ locateFile: (p) => p });
     const occt = await occtPromise;
     const result = occt.ReadFile(format, new Uint8Array(buffer), {
       linearUnit: 'meter',
       linearDeflectionType: 'bounding_box_ratio',
-      linearDeflection: 0.002,
+      linearDeflection: deflection || 0.002,
       angularDeflection: 0.5,
     });
     postMessage({ id, result });

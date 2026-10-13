@@ -1,38 +1,81 @@
 import { G } from '../util/units';
-
-/** Linear damping applied to FUEL bodies (must match FuelSystem). */
-export const FUEL_AIR_DAMPING = 0.25;
-/** Solver step: identical to the physics step so predictions match Rapier's integration. */
-const DT = 1 / 120;
-const K_DAMP = (c: number) => 1 / (1 + c * DT);
+import { FUEL } from '../field/rebuilt/dims';
 
 /**
- * Simulate a 2D shot (horizontal distance, height) using the same integration Rapier uses
- * for linear damping (v *= 1 / (1 + dt*c)). Returns the horizontal distance at which the
- * ball, on its way down, crosses height `h` — or null if it never reaches that height.
+ * FUEL aerodynamics, shared by the field simulation (FuelSystem) and the shot solver so predictions match what Rapier
+ * integrates. A 5.91in foam ball is light for its size, so air matters:
+ *  - quadratic drag  a = -k·Cd·|v|·v
+ *  - Magnus lift from backspin  a = k·CL(S)·|v|·(ω̂ × v), with CL(S) = S / (2.022·S + 0.981) (Sawicki et al.) and
+ *    spin parameter S = r|ω|/|v|. A hooded flywheel launches with heavy backspin, so shots float a little and drop in
+ *    steeper than a vacuum arc.
+ * k = ½ρA/m.
  */
-export function rangeAtHeight(speed: number, elev: number, h: number, damping = FUEL_AIR_DAMPING): number | null {
+export const AERO = {
+  /** ½·ρ·A/m (1/m). */
+  k: (0.5 * 1.2 * Math.PI * FUEL.radius ** 2) / FUEL.mass,
+  cd: 0.5,
+  /** Spin parameter r·ω/v a hooded shooter gives the ball at launch. */
+  launchSpin: 0.45,
+  /** Angular damping of loose FUEL (1/s); in flight this is the spin decay. */
+  angularDamping: 0.3,
+  /** Rolling resistance of foam on carpet (m/s²). */
+  rolling: 0.7,
+};
+
+/** Magnus lift coefficient for spin parameter S. */
+export function liftCoefficient(s: number) {
+  return s <= 0 ? 0 : Math.min(0.35, s / (2.022 * s + 0.981));
+}
+
+/** Solver step: identical to the physics step so predictions match Rapier's integration. */
+const DT = 1 / 120;
+const SPIN_DECAY = 1 / (1 + AERO.angularDamping * DT);
+
+/**
+ * Integrate a 2D shot (horizontal, vertical) exactly like the field does: aero acceleration, then gravity, then
+ * position (semi-implicit Euler, Rapier's order). `visit` gets each step's previous/new state and returns true to stop.
+ */
+function fly(speed: number, elev: number, visit: (px: number, py: number, x: number, y: number, vx: number, vy: number, i: number) => boolean) {
   let x = 0;
   let y = 0;
   let vx = speed * Math.cos(elev);
   let vy = speed * Math.sin(elev);
-  let apex = -Infinity;
-  const k = K_DAMP(damping);
+  let w = (AERO.launchSpin * speed) / FUEL.radius;
   for (let i = 0; i < 600; i++) {
-    vy -= G * DT;
-    vx *= k;
-    vy *= k;
+    const v = Math.hypot(vx, vy);
+    const cl = liftCoefficient((FUEL.radius * w) / Math.max(v, 1e-6));
+    const ax = AERO.k * v * (-AERO.cd * vx - cl * vy);
+    const ay = AERO.k * v * (-AERO.cd * vy + cl * vx);
+    vx += ax * DT;
+    vy += (ay - G) * DT;
+    w *= SPIN_DECAY;
     const px = x;
     const py = y;
     x += vx * DT;
     y += vy * DT;
-    apex = Math.max(apex, y);
-    if (vy < 0 && py >= h && y < h) {
-      const t = (py - h) / (py - y);
-      return px + (x - px) * t;
-    }
+    if (visit(px, py, x, y, vx, vy, i)) return true;
   }
-  return apex >= h ? x : null;
+  return false;
+}
+
+/**
+ * Horizontal distance at which the shot, on its way down, crosses height `h` (relative to the exit), or null if it
+ * never reaches that height.
+ */
+export function rangeAtHeight(speed: number, elev: number, h: number): number | null {
+  let out: number | null = null;
+  let apex = -Infinity;
+  let lastX = 0;
+  fly(speed, elev, (px, py, x, y, _vx, vy) => {
+    apex = Math.max(apex, y);
+    lastX = x;
+    if (vy < 0 && py >= h && y < h) {
+      out = px + ((x - px) * (py - h)) / (py - y);
+      return true;
+    }
+    return false;
+  });
+  return out ?? (apex >= h ? lastX : null);
 }
 
 /** Speed needed to hit a target `d` away and `h` above the exit at elevation `elev`. Null if impossible. */
@@ -52,17 +95,15 @@ export function solveSpeed(d: number, h: number, elev: number, maxSpeed = 30): n
 
 /** Time of flight for a solved shot (used for shoot-on-the-move lead). */
 export function flightTime(speed: number, elev: number, h: number): number {
-  let y = 0;
-  let vy = speed * Math.sin(elev);
-  const k = K_DAMP(FUEL_AIR_DAMPING);
-  for (let i = 0; i < 600; i++) {
-    vy -= G * DT;
-    vy *= k;
-    const py = y;
-    y += vy * DT;
-    if (vy < 0 && py >= h && y < h) return (i + 1) * DT;
-  }
-  return 600 * DT;
+  let t = 600 * DT;
+  fly(speed, elev, (_px, py, _x, y, _vx, vy, i) => {
+    if (vy < 0 && py >= h && y < h) {
+      t = (i + 1) * DT;
+      return true;
+    }
+    return false;
+  });
+  return t;
 }
 
 export interface ShotSolution {
@@ -73,39 +114,28 @@ export interface ShotSolution {
 
 /** Descent angle (rad, positive = falling) when the shot crosses height `h` on the way down. */
 export function entryAngle(speed: number, elev: number, h: number): number {
-  let y = 0;
-  let vx = speed * Math.cos(elev);
-  let vy = speed * Math.sin(elev);
-  const k = K_DAMP(FUEL_AIR_DAMPING);
-  for (let i = 0; i < 600; i++) {
-    vy -= G * DT;
-    vx *= k;
-    vy *= k;
-    const py = y;
-    y += vy * DT;
-    if (vy < 0 && py >= h && y < h) return Math.atan2(-vy, vx);
-  }
-  return 0;
+  let a = 0;
+  fly(speed, elev, (_px, py, _x, y, vx, vy) => {
+    if (vy < 0 && py >= h && y < h) {
+      a = Math.atan2(-vy, vx);
+      return true;
+    }
+    return false;
+  });
+  return a;
 }
 
 /** Height of the shot (relative to the exit) when it is `x` out horizontally, on the way up or down; null if short. */
 export function heightAtRange(speed: number, elev: number, x: number): number | null {
-  let px = 0;
-  let y = 0;
-  let vx = speed * Math.cos(elev);
-  let vy = speed * Math.sin(elev);
-  const k = K_DAMP(FUEL_AIR_DAMPING);
-  for (let i = 0; i < 600; i++) {
-    vy -= G * DT;
-    vx *= k;
-    vy *= k;
-    const nx = px + vx * DT;
-    const ny = y + vy * DT;
-    if (nx >= x) return y + ((ny - y) * (x - px)) / Math.max(1e-9, nx - px);
-    px = nx;
-    y = ny;
-  }
-  return null;
+  let out: number | null = null;
+  fly(speed, elev, (px, py, nx, ny) => {
+    if (nx >= x) {
+      out = py + ((ny - py) * (x - px)) / Math.max(1e-9, nx - px);
+      return true;
+    }
+    return false;
+  });
+  return out;
 }
 
 /** Ball center clearance (m) needed over the HUB's top frame relative to the aim height. */

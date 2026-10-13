@@ -44,11 +44,15 @@ function getWorker() {
 }
 
 /** Convert a STEP / IGES / BREP file to a Three.js hierarchy (meters, Z-up as authored). */
-export async function readStepFile(buf: ArrayBuffer, format: 'step' | 'iges' | 'brep'): Promise<THREE.Object3D> {
+/** Tessellation detail → OpenCascade linear deflection (fraction of the model's bounding box). */
+export const STEP_DETAIL = { coarse: 0.004, normal: 0.002, fine: 0.0008 } as const;
+export type StepDetail = keyof typeof STEP_DETAIL;
+
+export async function readStepFile(buf: ArrayBuffer, format: 'step' | 'iges' | 'brep', detail: StepDetail = 'normal'): Promise<THREE.Object3D> {
   const id = ++seq;
   const result = await new Promise<OcctResult>((resolve, reject) => {
     pending.set(id, { resolve, reject });
-    getWorker().postMessage({ id, format, buffer: buf }, [buf]);
+    getWorker().postMessage({ id, format, buffer: buf, deflection: STEP_DETAIL[detail] }, [buf]);
   });
   if (!result?.success) throw new Error('OpenCascade could not read this file');
   return occtToThree(result);
@@ -63,6 +67,8 @@ function colorMat(c: [number, number, number] | null | undefined) {
       color: c ? new THREE.Color(c[0], c[1], c[2]) : new THREE.Color(0x9aa3ad),
       metalness: 0.35,
       roughness: 0.55,
+      // STEP shells are not always consistently wound; draw both sides so no faces go missing.
+      side: THREE.DoubleSide,
     });
     matCache.set(key, m);
   }

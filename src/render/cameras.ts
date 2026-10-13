@@ -33,17 +33,30 @@ export class CameraRig {
     this.camera = new THREE.PerspectiveCamera(fov, 1, 0.05, 200);
   }
 
-  /** Yaw of "forward" for the driver's controls. */
-  referenceYaw(robot: Robot, driveFrame: 'camera' | 'driver-station'): number {
+  /** Chase-camera drive frame, frozen while the driver is translating (null = follow the camera). */
+  private heldYaw: number | null = null;
+
+  /**
+   * Yaw of "forward" for the driver's controls. In the chase camera the frame is captured when the driver starts
+   * moving and held until they let go: the camera keeps swinging around behind the robot, and if the controls
+   * followed it mid-move, a straight stick would curve (the "drift" in issue #4).
+   */
+  referenceYaw(robot: Robot, driveFrame: 'camera' | 'driver-station', translating = false): number {
     const dsYaw = this.alliance === 'blue' ? 0 : Math.PI;
     if (this.mode === 'fpv') return robot.yaw;
-    if (driveFrame === 'driver-station' || this.mode === 'driver' || this.mode === 'overhead') return dsYaw;
-    return this.chaseYaw;
+    if (driveFrame === 'driver-station' || this.mode === 'driver' || this.mode === 'overhead') {
+      this.heldYaw = null;
+      return dsYaw;
+    }
+    if (!translating) this.heldYaw = null;
+    else this.heldYaw ??= this.chaseYaw;
+    return this.heldYaw ?? this.chaseYaw;
   }
 
   setMode(m: CameraMode) {
     this.mode = m;
     this.initialized = false;
+    this.heldYaw = null;
   }
 
   cycle() {
@@ -51,7 +64,15 @@ export class CameraRig {
     this.setMode(CAMERA_MODES[(i + 1) % CAMERA_MODES.length]);
   }
 
+  private seenTeleports = 0;
+
   update(robot: Robot, dt: number) {
+    if (robot.teleports !== this.seenTeleports) {
+      // The robot was reset / placed: cut to it.
+      this.seenTeleports = robot.teleports;
+      this.initialized = false;
+      this.heldYaw = null;
+    }
     const p = robot.visual.position;
     const yaw = robot.yaw;
     const desiredPos = new THREE.Vector3();

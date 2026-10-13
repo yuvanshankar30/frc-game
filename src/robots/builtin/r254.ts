@@ -1,6 +1,7 @@
 import { Kit, M, mat } from './kit';
 import { swerveBase, groundIntake, intakeGearbox, Rig, type BuiltinRobot } from './common';
 import { inches } from '../../util/units';
+import { TURN_RATE, TURN_ACCEL } from '../../robot/schema';
 
 /**
  * 254 The Cheesy Poofs — Overload (65-6 official record, Curie division winner).
@@ -33,7 +34,7 @@ export const r254: BuiltinRobot = {
     highlights: ['65-6 official record', 'MK5n R1 swerve, 115 lb', 'Full-width drum + hood (rear)', 'Timing-belt powered floor', '~24 BPS (est.)', 'No climber'],
     sources: ['team254.com/first/2026: Overload (photo, 115 lb, sponsors)', 'Chief Delphi: Team 254 Presents: Overload'],
     frame: { length: L, width: W, height: H, mass: 59, comHeight: 0.16, bumperThickness: inches(3.5), bumperHeight: inches(5) },
-    drivetrain: { type: 'swerve', maxSpeed: 4.3, maxAccel: 11, maxOmega: 10.5, maxAlpha: 34 },
+    drivetrain: { type: 'swerve', maxSpeed: 4.3, maxAccel: 11, maxOmega: TURN_RATE, maxAlpha: TURN_ACCEL },
     intake: {
       zones: [{ center: [L / 2 + inches(8), inches(3.5), 0], size: [inches(7), inches(7), W - inches(1)] }],
       rate: 20,

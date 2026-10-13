@@ -9,7 +9,7 @@ await page.goto(process.env.URL ?? 'http://localhost:5174/');
 await page.waitForTimeout(1200);
 await page.getByText('Garage', { exact: true }).first().click();
 await page.waitForTimeout(600);
-await page.getByText(new RegExp(`^${team} · `)).first().click();
+await page.getByText(new RegExp(`^Team ${team} · `)).first().click();
 await page.waitForTimeout(2500);
 // Enlarge the preview canvas and step the orbit.
 await page.addStyleTag({ content: '.select{grid-template-columns:1fr 1100px!important}.preview{height:760px!important}' });

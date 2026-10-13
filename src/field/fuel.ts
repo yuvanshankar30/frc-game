@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { RAPIER, type World, GROUP, groups, ALL, MATERIAL, ROBOT_DOMINANCE } from '../physics/world';
 import { FUEL } from './rebuilt/dims';
-import { FUEL_AIR_DAMPING } from '../robot/ballistics';
+import { AERO, liftCoefficient } from '../robot/ballistics';
 
 export type FuelState = 'field' | 'stored' | 'hub' | 'outpost' | 'free';
 
@@ -50,8 +50,8 @@ export class FuelSystem {
       const body = world.createRigidBody(
         RAPIER.RigidBodyDesc.dynamic()
           .setTranslation(0, -10 - i, 0)
-          .setLinearDamping(FUEL_AIR_DAMPING)
-          .setAngularDamping(0.8)
+          .setLinearDamping(0)
+          .setAngularDamping(AERO.angularDamping)
           .setCanSleep(true),
       );
       const col = world.createCollider(
@@ -80,19 +80,20 @@ export class FuelSystem {
   }
 
   /** Put ball `i` on the field at a position with an optional velocity. */
-  place(i: number, p: THREE.Vector3Like, v?: THREE.Vector3Like, shooter: string | null = null) {
+  place(i: number, p: THREE.Vector3Like, v?: THREE.Vector3Like, shooter: string | null = null, spin?: THREE.Vector3Like) {
     const b = this.bodies[i];
     b.setEnabled(true);
     b.setTranslation({ x: p.x, y: p.y, z: p.z }, true);
     b.setLinvel(v ? { x: v.x, y: v.y, z: v.z } : { x: 0, y: 0, z: 0 }, true);
-    b.setAngvel({ x: 0, y: 0, z: 0 }, true);
+    b.setAngvel(spin ? { x: spin.x, y: spin.y, z: spin.z } : { x: 0, y: 0, z: 0 }, true);
     this.state[i] = 'field';
     b.setDominanceGroup(0);
     this.lastShooter[i] = shooter;
     this.colliders[i].setCollisionGroups(FIELD_GROUPS);
     this.colliders[i].setFriction(MATERIAL.fuel.friction);
     this.colliders[i].setRestitution(MATERIAL.fuel.restitution);
-    this.bodies[i].setLinearDamping(FUEL_AIR_DAMPING);
+    this.bodies[i].setLinearDamping(0);
+    this.bodies[i].setAngularDamping(AERO.angularDamping);
     this.bodies[i].enableCcd(false);
     this.ghostUntil[i] = -1;
     if (v && v.x * v.x + v.y * v.y + v.z * v.z > 25) {
@@ -116,6 +117,7 @@ export class FuelSystem {
     b.setLinvel({ x: v.x, y: v.y, z: v.z }, true);
     b.setAngvel({ x: 0, y: 0, z: 0 }, true);
     b.setLinearDamping(0.6);
+    b.setAngularDamping(0.8);
     this.colliders[i].setCollisionGroups(STORED_GROUPS);
     // Squishy foam settles into the gaps of a pile as the robot drives: low friction and no bounce let carried
     // FUEL pack as densely as a real hopper (~0.6) instead of stacking in loose columns.
@@ -191,7 +193,9 @@ export class FuelSystem {
         this.lastVy[i] = 0;
         continue;
       }
-      const vy = this.bodies[i].linvel().y;
+      const body = this.bodies[i];
+      if (!body.isSleeping()) this.air(body, dt);
+      const vy = body.linvel().y;
       const prev = this.lastVy[i];
       this.lastVy[i] = vy;
       if (prev < -1.2 && vy - prev > 1.5 && this.drops.length < 64) {
@@ -199,6 +203,40 @@ export class FuelSystem {
         this.drops.push({ x: t.x, y: t.y, z: t.z, speed: -prev });
       }
     }
+  }
+
+  /**
+   * Air and carpet on one loose ball (applied to its velocity before the physics step, matching the shot solver):
+   * quadratic drag and backspin lift in the air, rolling resistance when it's rolling on the carpet.
+   */
+  private air(body: RAPIER.RigidBody, dt: number) {
+    const v = body.linvel();
+    const sp = Math.hypot(v.x, v.y, v.z);
+    if (sp < 0.02) return;
+    const t = body.translation();
+    if (t.y < FUEL.radius + 0.012 && Math.abs(v.y) < 0.35) {
+      // Rolling: a foam ball sinks a little into the carpet, so it slows steadily and stops within a few meters.
+      const vh = Math.hypot(v.x, v.z);
+      if (vh < 1e-3) return;
+      const f = Math.max(0, 1 - (AERO.rolling * dt) / vh);
+      body.setLinvel({ x: v.x * f, y: v.y, z: v.z * f }, false);
+      const w = body.angvel();
+      body.setAngvel({ x: w.x * f, y: w.y, z: w.z * f }, false);
+      return;
+    }
+    const w = body.angvel();
+    const wm = Math.hypot(w.x, w.y, w.z);
+    // Magnus: CL·|v|·(ω̂ × v)
+    const cl = wm > 1e-3 ? liftCoefficient((FUEL.radius * wm) / sp) / wm : 0;
+    const k = AERO.k * sp * dt;
+    body.setLinvel(
+      {
+        x: v.x + k * (-AERO.cd * v.x + cl * (w.y * v.z - w.z * v.y)),
+        y: v.y + k * (-AERO.cd * v.y + cl * (w.z * v.x - w.x * v.z)),
+        z: v.z + k * (-AERO.cd * v.z + cl * (w.x * v.y - w.y * v.x)),
+      },
+      false,
+    );
   }
 
   /** Copy body transforms into the instanced mesh. */

@@ -2,7 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { useStore } from '../ui/store';
 import { EditorViewport, JOINT_COLORS, type GizmoTarget } from './EditorViewport';
-import { importCad, loadGlb, exportGlb, type ImportResult } from '../cad/loaders';
+import { importCad, loadGlb, exportGlb, CAD_ACCEPT, type ImportResult } from '../cad/loaders';
+import type { StepDetail } from '../cad/step';
+import { autoRig } from './autorig';
 import { robotSchema, checkRules, JOINT_DRIVERS, type RobotDefinition, type JointDef } from '../robot/schema';
 import { saveCustomRobot, getCustomRobot } from '../cad/storage';
 import { invalidateThumb } from '../render/thumbs';
@@ -57,6 +59,8 @@ export function RobotEditor() {
   const [dirty, setDirty] = useState(false);
   const [confirmLeave, setConfirmLeave] = useState(false);
   const [tint, setTint] = useState(true);
+  const [stripHw, setStripHw] = useState(true);
+  const [detail, setDetail] = useState<StepDetail>('normal');
   const fileInput = useRef<HTMLInputElement>(null);
 
   const update = useCallback((fn: (d: RobotDefinition) => void) => {
@@ -210,7 +214,7 @@ export function RobotEditor() {
         setDef(d);
         setImportInfo(null);
       } else {
-        const res = await importCad(files, (m) => setBusy(m));
+        const res = await importCad(files, (m) => setBusy(m), { stripHardware: stripHw, detail });
         const replacing = !!raw.current;
         raw.current = res.model;
         setImportInfo(res);
@@ -442,7 +446,7 @@ export function RobotEditor() {
             type="file"
             multiple
             hidden
-            accept=".step,.stp,.iges,.igs,.brep,.glb,.gltf,.stl,.obj,.frcbot,.zip"
+            accept={`${CAD_ACCEPT},.frcbot,.zip,.bin,.png,.jpg,.jpeg,.mtl`}
             onChange={(e) => e.target.files && void doImport(Array.from(e.target.files))}
           />
         </div>
@@ -533,9 +537,10 @@ export function RobotEditor() {
             <div className={`dropzone ${over ? 'over' : ''}`} style={{ maxWidth: 520, background: 'var(--panel)' }}>
               <h2 style={{ color: 'var(--text)', marginTop: 0 }}>Import your robot CAD</h2>
               <p>
-                Drop <b>STEP / STP / IGES</b> (converted in-browser with OpenCascade), <b>GLB / GLTF</b>, <b>STL</b> (several at once), <b>OBJ</b>, or a{' '}
-                <b>.frcbot</b> package.
+                Drop <b>STEP / STP / IGES</b> (converted in-browser with OpenCascade), <b>GLB / GLTF</b> (with its .bin and textures), <b>STL</b>,{' '}
+                <b>OBJ</b>, <b>3MF</b>, <b>FBX</b>, <b>PLY</b>, or a <b>.frcbot</b> package. Several files at once are combined into one robot.
               </p>
+              <ImportOptions stripHw={stripHw} setStripHw={setStripHw} detail={detail} setDetail={setDetail} />
               <p className="note">
                 Tip: from Onshape, right-click the assembly → Export → STEP. Fusion: File → Export → .step. Keep fasteners hidden for a lighter model.
               </p>
@@ -580,9 +585,13 @@ export function RobotEditor() {
             ))}
             {importInfo && (
               <div className="note">
-                {importInfo.format.toUpperCase()} · {importInfo.triangles.toLocaleString()} triangles · guessed units {unitName(importInfo.unitScale)} · {importInfo.upAxis.toUpperCase()}-up
+                {importInfo.format.toUpperCase()} · {importInfo.parts.toLocaleString()} parts · {importInfo.triangles.toLocaleString()} triangles · guessed units{' '}
+                {unitName(importInfo.unitScale)} · {importInfo.upAxis.toUpperCase()}-up
+                {importInfo.stripped > 0 && <> · removed {importInfo.stripped.toLocaleString()} fasteners / tiny parts</>}
               </div>
             )}
+            <h4>Next import</h4>
+            <ImportOptions stripHw={stripHw} setStripHw={setStripHw} detail={detail} setDetail={setDetail} />
             <h4>Units</h4>
             <Select
               label="Model units"
@@ -628,7 +637,7 @@ export function RobotEditor() {
             <Vec3In label="Rotation (°)" value={def.model.rotation} unit="deg" onChange={(v) => update((d) => void (d.model.rotation = v))} />
             <Vec3In label="Offset" value={def.model.position} onChange={(v) => update((d) => void (d.model.position = v))} />
             <div className="row">
-              <button className="btn small" disabled={noModel} onClick={() => setDef((d) => autoPlace(d, raw.current!))}>
+              <button className="btn small" disabled={noModel} onClick={() => update((d) => Object.assign(d, autoPlace(d, raw.current!)))}>
                 Center &amp; drop to floor
               </button>
               <button className="btn small" disabled={noModel} onClick={() => setGizmo({ kind: 'model' })}>
@@ -720,6 +729,25 @@ export function RobotEditor() {
                   Select parent ↑
                 </button>
               )}
+              <button
+                className="btn small"
+                disabled={noModel}
+                title="Create joints for parts named like wheels, rollers, intake, turret, hood, flywheel, indexer and climber"
+                onClick={() => {
+                  const r = autoRig(def, raw.current!);
+                  if (!r.joints.length) {
+                    toast('No parts with mechanism names found. Rename subassemblies in CAD (Intake, Turret, Hood…) or add joints by hand.');
+                    return;
+                  }
+                  update((d) => {
+                    d.joints.push(...r.joints);
+                    d.parts.push(...r.parts);
+                  });
+                  toast(`Added ${r.joints.length} joints: ${r.summary.slice(0, 4).join(', ')}${r.summary.length > 4 ? '…' : ''}. Check pivots and angles.`);
+                }}
+              >
+                Auto-rig from names
+              </button>
             </div>
             {selNode && (
               <div className="note">
@@ -1161,6 +1189,26 @@ function MechanismsTab({
           <Check label="Can climb in AUTO" value={def.climber.canAutoClimb} onChange={(v) => update((d) => void (d.climber!.canAutoClimb = v))} />
         </>
       )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- import options
+
+function ImportOptions(props: { stripHw: boolean; setStripHw: (v: boolean) => void; detail: StepDetail; setDetail: (v: StepDetail) => void }) {
+  return (
+    <div className="import-opts">
+      <Check label="Remove fasteners & tiny parts" value={props.stripHw} onChange={props.setStripHw} />
+      <Select
+        label="STEP detail"
+        value={props.detail}
+        options={[
+          ['coarse', 'Coarse (fastest)'],
+          ['normal', 'Normal'],
+          ['fine', 'Fine (slow, heavy)'],
+        ]}
+        onChange={(v) => props.setDetail(v as StepDetail)}
+      />
     </div>
   );
 }

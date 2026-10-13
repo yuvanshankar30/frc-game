@@ -8,7 +8,7 @@ const errors = [];
 page.on('pageerror', (e) => errors.push(e.message));
 page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
 
-const ids = ['builtin-4414', 'builtin-971', 'builtin-2910', 'builtin-1690', 'builtin-254', 'builtin-1678'];
+const ids = (process.env.ROBOTS ?? '4414,971,2910,1690,254,1678').split(',').map((t) => `builtin-${t}`);
 const results = [];
 for (const id of ids) {
   await page.goto(url);
@@ -16,7 +16,7 @@ for (const id of ids) {
   await page.waitForTimeout(1500);
   await page.getByText('Practice', { exact: true }).first().click();
   await page.waitForTimeout(800);
-  await page.getByText(new RegExp(`^${id.split('-')[1]} · `)).first().click();
+  await page.getByText(new RegExp(`^Team ${id.split('-')[1]} · `)).first().click();
   await page.getByText('Start Practice').click();
   await page.waitForFunction(() => window.__game?.players?.length, null, { timeout: 20000 });
   await page.waitForTimeout(800);

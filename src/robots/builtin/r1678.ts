@@ -1,6 +1,7 @@
 import { Kit, M, mat } from './kit';
 import { swerveBase, groundIntake, intakeGearbox, Rig, type BuiltinRobot } from './common';
 import { inches } from '../../util/units';
+import { TURN_RATE, TURN_ACCEL } from '../../robot/schema';
 
 /**
  * 1678 Citrus Circuits — Limestone (two-time district winner, Milstein division champion, Einstein).
@@ -38,7 +39,7 @@ export const r1678: BuiltinRobot = {
     highlights: ['Milstein division champion', 'Ball tunnel + 3.5in grip-tape drum', 'Hood 17.5–52.5° (X44 jackshaft)', 'Climber lifts the hopper roof', 'LEVEL 1 climb', '21 Kraken motors'],
     sources: ['citruscircuits.org/2026-robot (design write-up)', '1678 CAD release renderings (Limestone Extended / Retracted / Hood)', 'github.com/frc1678/C2026-Public (constants)'],
     frame: { length: L, width: W, height: H, mass: 61, comHeight: 0.17, bumperThickness: inches(3.5), bumperHeight: inches(5) },
-    drivetrain: { type: 'swerve', maxSpeed: 4.4, maxAccel: 11, maxOmega: 10, maxAlpha: 32 },
+    drivetrain: { type: 'swerve', maxSpeed: 4.4, maxAccel: 11, maxOmega: TURN_RATE, maxAlpha: TURN_ACCEL },
     intake: {
       zones: [{ center: [L / 2 + inches(9), inches(3.5), 0], size: [inches(7), inches(7), W - inches(1)] }],
       rate: 22,

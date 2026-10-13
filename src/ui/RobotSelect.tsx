@@ -16,7 +16,7 @@ export function RobotStats({ def }: { def: RobotDefinition }) {
     ['Shooter', sh ? (sh.turretMin !== null ? (sh.barrels.length > 1 ? `${sh.barrels.length}× turret` : 'Turret') : `${sh.barrels.length}-lane drum`) : '—'],
     ['Intake', def.intake ? <>{def.intake.rate}<small> /s</small></> : '—'],
     ['Climb', def.climber?.maxLevel ? `L${def.climber.maxLevel}` : 'None'],
-    ['Drive', def.drivetrain.type.toUpperCase()],
+    ['Drive', def.drivetrain.type[0].toUpperCase() + def.drivetrain.type.slice(1)],
     ['Frame', <>{(def.frame.length / 0.0254).toFixed(1)}×{(def.frame.width / 0.0254).toFixed(1)}<small> in</small></>],
     ['Height', <>{(def.frame.height / 0.0254).toFixed(1)}<small> in</small></>],
   ];
@@ -52,10 +52,10 @@ export function robotChips(def: RobotDefinition) {
     if (sh.turretMin !== null) chips.push(sh.barrels.length > 1 ? `${sh.barrels.length} turrets` : 'turret');
     else chips.push(sh.barrels.length > 1 ? `${sh.barrels.length}-lane drum` : 'fixed shooter');
     if (sh.hoodMin !== null) chips.push('hood');
-    if (sh.sotm) chips.push('SOTM');
+    if (sh.sotm) chips.push('shoots moving');
   }
   chips.push(def.climber?.maxLevel ? `L${def.climber.maxLevel} climb` : 'no climb');
-  if (def.frame.height <= 0.565) chips.push('trench');
+  if (def.frame.height <= 0.565) chips.push('fits trench');
   return chips;
 }
 
@@ -137,23 +137,15 @@ export function RobotSelect() {
         {loading && <div className="note">Loading robots…</div>}
         <div className="grid">
           {robots.map((r) => (
-            <div key={r.id} className={`card ${cur?.robotId === r.id ? 'selected' : ''}`} onClick={() => update({ robotId: r.id })}>
+            <div key={r.id} className={`card ${cur?.robotId === r.id ? 'selected' : ''} ${r.builtin ? '' : 'custom'}`} onClick={() => update({ robotId: r.id })}>
               <div className="stripe" style={{ background: r.def.color }} />
               <div className="thumb">
-                <span className="num">{r.def.team || 'CSTM'}</span>
                 <RobotThumb id={r.id} />
               </div>
               <div className="meta">
-                <div className="team">{r.def.team ? `${r.def.team} · ` : ''}{r.def.author || 'Custom CAD'}</div>
+                <div className="team">{r.def.team ? `Team ${r.def.team}` : 'Custom'}{r.def.author ? ` · ${r.def.author}` : ''}</div>
                 <div className="name">{r.def.name}</div>
-                <div className="chips">
-                  {!r.builtin && <span className="chip custom">custom</span>}
-                  {robotChips(r.def).map((c) => (
-                    <span className="chip" key={c}>
-                      {c}
-                    </span>
-                  ))}
-                </div>
+                <div className="specline">{(r.builtin ? robotChips(r.def) : ['custom', ...robotChips(r.def)]).join(' · ')}</div>
               </div>
             </div>
           ))}
