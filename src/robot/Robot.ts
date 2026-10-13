@@ -830,16 +830,17 @@ export class Robot {
   private groundedWheels() {
     let n = 0;
     const filter = groups(GROUP.WHEEL, GROUP.FIELD | GROUP.ROBOT);
-    const down = { x: 0, y: -1, z: 0 };
+    const ray = (this.ray ??= new RAPIER.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: -1, z: 0 }));
     for (const w of this.wheelPositions) {
       const o = this.toWorld({ x: w.x, y: this.def.frame.wheelRadius, z: w.z }, this.rayTmp);
-      const ray = new RAPIER.Ray({ x: o.x, y: o.y, z: o.z }, down);
+      ray.origin = { x: o.x, y: o.y, z: o.z };
       const hit = this.world.castRay(ray, this.def.frame.wheelRadius + 0.03, true, undefined, filter, undefined, this.body);
       if (hit) n++;
     }
     return n;
   }
   private rayTmp = new THREE.Vector3();
+  private ray: RAPIER.Ray | null = null;
 
   /** Heading error (rad) between the robot and the direction needed to shoot at its HUB, or null. */
   private robotAimError(ctx: RobotContext): number | null {
@@ -1208,7 +1209,8 @@ export class Robot {
     // Not ready: don't bank shots while spinning up, empty, or lining up. In expert mode the indexer feeds whenever
     // it's told to, into whatever the wheel is doing (a stalled wheel just drops FUEL out).
     const ready = ctx.expert ? this.stored.length > 0 : this.spin >= 0.85 && this.stored.length > 0 && (!ctx.assist || this.aimSettled(aim, ctx));
-    this.shotReady = ready;
+    // The HUD's ready light still means "a shot now would be at full speed".
+    this.shotReady = ready && this.spin >= 0.85;
     if (!ready) {
       this.fireTimer = Math.max(this.fireTimer, 0);
       return;

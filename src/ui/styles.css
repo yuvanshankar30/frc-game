@@ -1258,7 +1258,19 @@ kbd {
   flex-direction: column;
   gap: 8px;
   margin: 10px 0;
-  text-align: left;
+  font-size: 13px;
+}
+.dropzone .import-opts label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.dropzone .import-opts {
+  align-items: center;
+  margin: 14px 0;
+}
+.dropzone .import-opts select {
+  width: auto;
 }
 .highscores {
   margin-top: 14px;

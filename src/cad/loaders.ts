@@ -217,15 +217,13 @@ export function stripHardware(root: THREE.Object3D, unitScale: number): number {
   const size = new THREE.Vector3();
   root.traverse((o) => {
     if (o === root) return;
-    if (HARDWARE_NAME.test(o.name)) {
-      remove.push(o);
-      return;
-    }
     const m = o as THREE.Mesh;
-    if (m.isMesh) {
-      tmp.setFromObject(m).getSize(size);
-      if (size.length() * unitScale < 0.008) remove.push(m);
-    }
+    if (!m.isMesh && !HARDWARE_NAME.test(o.name)) return;
+    tmp.setFromObject(o).getSize(size);
+    const across = size.length() * unitScale;
+    // A hardware-named node is only removed if it's fastener-sized (a "Bolt-on Bracket" subassembly stays); any other
+    // part under ~8 mm is a washer, spacer or rivet the name didn't give away.
+    if (HARDWARE_NAME.test(o.name) ? across < 0.15 : across < 0.008) remove.push(o);
   });
   let n = 0;
   for (const o of remove) {

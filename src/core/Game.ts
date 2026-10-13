@@ -276,8 +276,8 @@ export class Game {
       });
       while (this.acc >= PHYSICS_DT && steps < 6) {
         this.stepSim(cmds, PHYSICS_DT);
-        // Edge-triggered climb only applies to the first sub-step.
-        for (const c of cmds) c.climb = false;
+        // Edge-triggered actions (climb, flywheel toggle) only apply to the first sub-step.
+        for (const c of cmds) c.climb = c.rev = false;
         this.acc -= PHYSICS_DT;
         steps++;
       }

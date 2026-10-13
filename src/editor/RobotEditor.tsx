@@ -542,7 +542,7 @@ export function RobotEditor() {
               </p>
               <ImportOptions stripHw={stripHw} setStripHw={setStripHw} detail={detail} setDetail={setDetail} />
               <p className="note">
-                Tip: from Onshape, right-click the assembly → Export → STEP. Fusion: File → Export → .step. Keep fasteners hidden for a lighter model.
+                Tip: from Onshape, right-click the assembly → Export → STEP. Fusion: File → Export → .step. Big assemblies import faster with STEP detail set to coarse.
               </p>
               <button className="btn primary" onClick={() => fileInput.current?.click()}>
                 Choose files…
@@ -634,7 +634,7 @@ export function RobotEditor() {
                 180°
               </button>
             </div>
-            <Vec3In label="Rotation (°)" value={def.model.rotation} unit="deg" onChange={(v) => update((d) => void (d.model.rotation = v))} />
+            <Vec3In label="Rotation" value={def.model.rotation} unit="deg" onChange={(v) => update((d) => void (d.model.rotation = v))} />
             <Vec3In label="Offset" value={def.model.position} onChange={(v) => update((d) => void (d.model.position = v))} />
             <div className="row">
               <button className="btn small" disabled={noModel} onClick={() => update((d) => Object.assign(d, autoPlace(d, raw.current!)))}>

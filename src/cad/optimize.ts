@@ -21,7 +21,8 @@ function mergeInto(container: THREE.Object3D, isBoundary: (o: THREE.Object3D) =>
   const meshes: THREE.Mesh[] = [];
   const walk = (o: THREE.Object3D) => {
     for (const ch of o.children) {
-      if (isBoundary(ch)) continue;
+      // Hidden parts stay hidden (and separate); joint subtrees are merged into their own container.
+      if (isBoundary(ch) || !ch.visible) continue;
       const m = ch as THREE.Mesh;
       if (m.isMesh && !(m as THREE.SkinnedMesh).isSkinnedMesh && !(m as unknown as THREE.InstancedMesh).isInstancedMesh && !m.geometry.morphAttributes.position) {
         meshes.push(m);
