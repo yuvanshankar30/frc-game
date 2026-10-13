@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { MatchController } from './MatchController';
-import { PERIODS, rankingPoints, emptyScore, totalPoints, towerValue } from './scoring';
+import { SCORING, PERIODS, rankingPoints, emptyScore, totalPoints, towerValue } from './scoring';
 
 function run(m: MatchController, secs: number, dt = 1 / 120) {
   for (let t = 0; t < secs; t += dt) m.tick(dt);
@@ -48,29 +48,61 @@ describe('MatchController', () => {
   it('ties pick the first inactive alliance randomly', () => {
     const a = new MatchController({ autoTeleopGap: 0, rng: () => 0.2 });
     a.start();
-    run(a, PERIODS.auto + 0.1);
+    run(a, PERIODS.auto + SCORING.graceSeconds + 0.1);
     expect(a.firstInactive).toBe('blue');
     const b = new MatchController({ autoTeleopGap: 0, rng: () => 0.8 });
     b.start();
-    run(b, PERIODS.auto + 0.1);
+    run(b, PERIODS.auto + SCORING.graceSeconds + 0.1);
     expect(b.firstInactive).toBe('red');
   });
 
   it('FUEL in an inactive HUB scores nothing but is tracked', () => {
     const m = new MatchController({ autoTeleopGap: 0, rng: () => 0.1 });
     m.start();
-    run(m, PERIODS.auto + PERIODS.transition + 1);
+    run(m, PERIODS.auto + PERIODS.transition + SCORING.graceSeconds + 0.5);
     const inactive = m.isHubActive('blue') ? 'red' : 'blue';
     expect(m.scoreFuel(inactive)).toBe(0);
     expect(m.score[inactive].wastedFuel).toBe(1);
   });
 
-  it('nothing scores during the AUTO→TELEOP pause', () => {
-    const m = new MatchController({ autoTeleopGap: 3 });
+  it('FUEL within the 3 s grace after AUTO counts as AUTO FUEL; nothing scores later in a long pause', () => {
+    const m = new MatchController({ autoTeleopGap: 5 });
     m.start();
     run(m, PERIODS.auto + 1);
     expect(m.phase).toBe('pause');
+    expect(m.scoreFuel('blue')).toBe(1);
+    expect(m.score.blue.autoFuel).toBe(1);
+    run(m, 2.5);
     expect(m.scoreFuel('blue')).toBe(0);
+  });
+
+  it('grace FUEL decides the SHIFT order', () => {
+    const m = new MatchController({ autoTeleopGap: 3, rng: () => 0.9 });
+    m.start();
+    run(m, PERIODS.auto + 1);
+    m.scoreFuel('blue'); // lands in the grace window: blue "won" AUTO
+    run(m, 3);
+    expect(m.firstInactive).toBe('blue');
+  });
+
+  it('a HUB keeps counting for 3 s after it goes inactive at a SHIFT change', () => {
+    const m = new MatchController({ autoTeleopGap: 0, rng: () => 0.1 });
+    m.start();
+    run(m, PERIODS.auto + PERIODS.transition + 1);
+    const inactive = m.isHubActive('blue') ? 'red' : 'blue';
+    expect(m.scoreFuel(inactive)).toBe(1);
+    run(m, 2.5);
+    expect(m.scoreFuel(inactive)).toBe(0);
+  });
+
+  it('FUEL still scores for 3 s after the match ends', () => {
+    const m = new MatchController({ autoTeleopGap: 0 });
+    m.start();
+    run(m, PERIODS.auto + PERIODS.transition + PERIODS.shift * PERIODS.shiftCount + PERIODS.endgame + 1);
+    expect(m.phase).toBe('post');
+    expect(m.scoreFuel('red')).toBe(1);
+    run(m, 2.5);
+    expect(m.scoreFuel('red')).toBe(0);
   });
 
   it('clock counts down per period', () => {

@@ -25,6 +25,12 @@ export class MatchController {
   /** Alliance whose HUB is inactive during SHIFT 1 (decided after AUTO). */
   firstInactive: Alliance | null = null;
   score: Record<Alliance, AllianceScore> = { blue: emptyScore(), red: emptyScore() };
+  /** Match time (s since AUTO started), keeps running for the scoring grace window after the match. */
+  private matchT = 0;
+  /** matchT when each HUB last went inactive (FUEL still counts for GRACE seconds after). */
+  private deactivatedAt: Record<Alliance, number | null> = { blue: null, red: null };
+  private wasActive: Record<Alliance, boolean> = { blue: false, red: false };
+  private autoEndAt: number | null = null;
   private rng: () => number;
   private listeners: ((p: Phase) => void)[] = [];
 
@@ -40,6 +46,10 @@ export class MatchController {
   start() {
     this.score = { blue: emptyScore(), red: emptyScore() };
     this.firstInactive = null;
+    this.matchT = 0;
+    this.autoEndAt = null;
+    this.deactivatedAt = { blue: null, red: null };
+    this.wasActive = { blue: true, red: true };
     this.currentShift = 0;
     this.teleopT = 0;
     this.setPhase('auto');
@@ -55,11 +65,23 @@ export class MatchController {
   private teleopT = 0;
 
   tick(dt: number) {
-    if (this.phase === 'pre' || this.phase === 'post') return;
+    if (this.phase === 'pre') return;
+    this.matchT += dt;
+    if (this.phase !== 'post') this.advance(dt);
+    // FUEL that scores within GRACE of AUTO ending still counts for AUTO, so the SHIFT order is decided after it.
+    if (this.firstInactive === null && this.autoEndAt !== null && (this.matchT - this.autoEndAt >= SCORING.graceSeconds || this.phase === 'shift')) this.decideFirstInactive();
+    for (const a of ['blue', 'red'] as const) {
+      const active = this.isHubActive(a);
+      if (this.wasActive[a] && !active) this.deactivatedAt[a] = this.matchT;
+      this.wasActive[a] = active;
+    }
+  }
+
+  private advance(dt: number) {
     this.t += dt;
     if (this.phase === 'auto') {
       if (this.t >= PERIODS.auto) {
-        this.decideFirstInactive();
+        this.autoEndAt = this.matchT;
         this.setPhase(this.autoTeleopGap > 0 ? 'pause' : 'transition');
         this.teleopT = 0;
       }
@@ -75,10 +97,24 @@ export class MatchController {
     this.teleopT += dt;
     const next = this.teleopPhaseAt(this.teleopT);
     if (next.phase !== this.phase || next.shift !== this.currentShift) {
+      // Entering SHIFT 1 needs the HUB order (normally decided at the end of the AUTO grace window).
+      if (next.phase === 'shift' && this.firstInactive === null) this.decideFirstInactive();
       this.currentShift = next.shift;
       this.setPhase(next.phase);
       this.t = this.teleopT - next.start;
     }
+  }
+
+  /** True while FUEL entering alliance `a`'s HUB scores: active, or within the grace window after deactivating. */
+  hubCounts(a: Alliance): boolean {
+    if (this.isHubActive(a)) return true;
+    const d = this.deactivatedAt[a];
+    return d !== null && this.matchT - d <= SCORING.graceSeconds;
+  }
+
+  /** In the grace window after AUTO, scored FUEL is still AUTO FUEL. */
+  private inAutoScoring() {
+    return this.phase === 'auto' || (this.autoEndAt !== null && this.matchT - this.autoEndAt <= SCORING.graceSeconds);
   }
 
   private currentShift = 0;
@@ -186,11 +222,11 @@ export class MatchController {
   /** Called by the HUB when a FUEL ball enters it. Returns points awarded. */
   scoreFuel(a: Alliance): number {
     const s = this.score[a];
-    if (!this.isHubActive(a)) {
+    if (this.phase === 'pre' || !this.hubCounts(a)) {
       if (this.running) s.wastedFuel++;
       return 0;
     }
-    if (this.phase === 'auto') s.autoFuel++;
+    if (this.inAutoScoring()) s.autoFuel++;
     else s.teleopFuel++;
     return SCORING.fuelActive;
   }

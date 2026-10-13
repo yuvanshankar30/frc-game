@@ -115,6 +115,17 @@ The geometry comes from the 2026 Game Manual (Section 5) and the WPILib `2026-re
 
 All dimensions live in `src/field/rebuilt/dims.ts`, and point values live in `src/game/scoring.ts`.
 
+Match flow follows the manual: a 3-2-1 countdown, then AUTO (20s, both HUBs active). Robots are disabled for the
+3s AUTO→TELEOP delay. TELEOP runs TRANSITION (10s), four 25s SHIFTs with alternating HUBs, and END GAME (30s).
+FUEL keeps scoring for 3s after a HUB deactivates and after AUTO or the match ends. The alliance that scored more
+AUTO FUEL, grace window included, starts SHIFT 1 inactive.
+
+## Sound
+
+Field cues are synthesized: the "Charge!" start, the AUTO-end buzzer, TELEOP bells, shift chimes, the END GAME
+whistle and the final buzzer. Robot loops follow the drivetrain, flywheel, intake and indexer. To use real
+recordings, drop files into `public/sfx/`. The file names are listed in `public/sfx/README.md`.
+
 ## Project layout
 
 ```
@@ -147,5 +158,8 @@ The browser tests need the dev server running on :5273 (or `URL=...`) and use yo
 | `node scripts/robot-gallery.mjs <dir>` | Preview screenshots of every robot |
 | `node scripts/drive-test.mjs` | Drive physics: top speed, braking, BUMP crossings (no beaching), driving through FUEL, TRENCH |
 | `node scripts/robot-closeup.mjs <team> <dir>` | Close-up turntable shots of one robot |
+| `node scripts/ingame-closeup.mjs <team> <dir>` | In-game shots with the intake deployed |
+| `node scripts/flow-test.mjs` | Countdown, AUTO-end disable, shooting while rotating, hopper spills, FUEL under the frame |
+| `node scripts/intake-test.mjs` | Driving through FUEL with the intake on vs off: speed, missed entries, spills |
 
 Not affiliated with FIRST® or MoSim.

@@ -2,6 +2,8 @@
 export const SCORING = {
   fuelActive: 1,
   fuelInactive: 0,
+  /** FUEL keeps being assessed this long after a HUB deactivates (and after AUTO / the match ends). */
+  graceSeconds: 3,
   autoTowerL1: 15,
   autoTowerL1MaxRobots: 2,
   teleopTower: { 1: 10, 2: 20, 3: 30 } as Record<number, number>,
