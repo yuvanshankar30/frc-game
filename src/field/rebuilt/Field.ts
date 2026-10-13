@@ -6,7 +6,7 @@ import {
   FIELD, HUB, BUMP, TRENCH, DEPOT, OUTPOST, TOWER, FUEL, LANE, NEUTRAL_FUEL,
 } from './dims';
 import type { Alliance } from '../../game/scoring';
-import { createCarpetTexture } from './textures';
+import { createCarpetTexture, aprilTagTexture, netTexture } from './textures';
 import { inches } from '../../util/units';
 
 export const ALLIANCE_COLOR: Record<Alliance, number> = { blue: 0x1f5fff, red: 0xe02020 };
@@ -116,8 +116,9 @@ export class Field {
 
   private buildPerimeter() {
     const b = this.builder;
-    const rail = b.material(0xdfe6ee, { opacity: 0.22, roughness: 0.1 });
+    const rail = b.material(0xa9bfd2, { opacity: 0.24, roughness: 0.1 });
     const steel = b.material(0x9aa1a9, { metalness: 0.7, roughness: 0.35 });
+    const frame = b.material(0x1b1e24, { metalness: 0.5, roughness: 0.5 });
     const t = 0.05;
     const h = FIELD.guardrailHeight;
     // Long-side guardrails (polycarbonate panel + top rail), plus an invisible taller barrier for FUEL.
@@ -127,8 +128,11 @@ export class Field {
     for (const s of [-1, 1]) {
       b.box({ x: 0, y: h / 2, z: s * (HW + t / 2) }, { x: FIELD.length, y: h, z: t }, { material: rail, phys: null, castShadow: false });
       b.box({ x: 0, y: h / 2, z: s * (HW + WALL / 2) }, { x: FIELD.length + 2 * WALL, y: h, z: WALL }, { visible: false, phys: MATERIAL.polycarb });
-      b.box({ x: 0, y: h + 0.02, z: s * (HW + t / 2) }, { x: FIELD.length, y: 0.04, z: 0.05 }, { material: steel, phys: null });
-      b.box({ x: 0, y: 0.04, z: s * (HW + t / 2) }, { x: FIELD.length, y: 0.08, z: 0.06 }, { material: steel, phys: null });
+      b.box({ x: 0, y: h + 0.02, z: s * (HW + t / 2) }, { x: FIELD.length, y: 0.05, z: 0.06 }, { material: frame, phys: null });
+      b.box({ x: 0, y: 0.04, z: s * (HW + t / 2) }, { x: FIELD.length, y: 0.08, z: 0.07 }, { material: frame, phys: null });
+      // Dark aluminum posts every ~6 ft between the polycarbonate panels.
+      for (let x = -FIELD.length / 2; x <= FIELD.length / 2 + 1e-6; x += FIELD.length / 9)
+        b.box({ x, y: h / 2, z: s * (HW + t / 2) }, { x: 0.05, y: h + 0.02, z: 0.07 }, { material: frame, phys: null, castShadow: false });
       // Spectator-side containment so FUEL doesn't leave the arena entirely.
       b.box({ x: 0, y: 1.5, z: s * (HW + 0.6) }, { x: FIELD.length + 4, y: 3, z: 0.1 }, { visible: false, phys: MATERIAL.polycarb, group: GROUP.NET });
     }
@@ -187,7 +191,19 @@ export class Field {
     const exitDir = T.sign; // toward the neutral zone (field center): +X for blue, -X for red
 
     // Base structure (solid up to the funnel floor).
-    b.box({ x: cx, y: HUB_FLOOR / 2, z: 0 }, { x: fp, y: HUB_FLOOR, z: fp }, { color: 0x4a505c, phys: MATERIAL.steel });
+    b.box({ x: cx, y: HUB_FLOOR / 2, z: 0 }, { x: fp, y: HUB_FLOOR, z: fp }, { color: 0x2c2f35, phys: MATERIAL.steel });
+    // AprilTag signs: two on each face of the HUB, high on the dark body.
+    for (let f = 0; f < 4; f++) {
+      const a = (f * Math.PI) / 2;
+      const nx = Math.cos(a);
+      const nz = Math.sin(a);
+      for (const off of [-0.16, 0.16]) {
+        const tag = new THREE.Mesh(new THREE.PlaneGeometry(0.22, 0.22), new THREE.MeshStandardMaterial({ map: aprilTagTexture((side === 'blue' ? 0 : 8) + f * 2 + (off > 0 ? 1 : 0) + 1), roughness: 0.6 }));
+        tag.position.set(cx + nx * (fp / 2 + 0.004) - nz * off, HUB_FLOOR - 0.2, nz * (fp / 2 + 0.004) + nx * off);
+        tag.rotation.y = Math.atan2(nx, nz);
+        this.root.add(tag);
+      }
+    }
     // Alliance colored skirts.
     for (const s of [-1, 1]) {
       b.box({ x: cx, y: 0.5, z: s * (fp / 2 + 0.005) }, { x: fp * 0.9, y: 0.6, z: 0.01 }, { color: ALLIANCE_COLOR[side], phys: null, castShadow: false });
@@ -229,10 +245,15 @@ export class Field {
 
     // Net behind the HUB on the NEUTRAL ZONE side.
     const netX = cx + exitDir * (fp / 2 + HUB.netOffset);
-    const netMat = new THREE.MeshStandardMaterial({ color: 0x111111, transparent: true, opacity: 0.35, side: THREE.DoubleSide });
-    b.box({ x: netX, y: HUB.openingHeight + 0.55, z: 0 }, { x: 0.01, y: 1.4, z: HUB.netWidth }, { material: netMat, phys: MATERIAL.polycarb, group: GROUP.NET, castShadow: false });
+    // Tall black netting on two posts with a top bar.
+    const netH = 2.2;
+    const netMat = new THREE.MeshBasicMaterial({ map: netTexture(HUB.netWidth * 9, netH * 9), transparent: true, alphaTest: 0.25, side: THREE.DoubleSide });
+    b.box({ x: netX, y: HUB.openingHeight + netH / 2 - 0.15, z: 0 }, { x: 0.01, y: netH, z: HUB.netWidth }, { material: netMat, phys: MATERIAL.polycarb, group: GROUP.NET, castShadow: false });
+    const postH = HUB.openingHeight + netH - 0.1;
+    const dark = b.material(0x1b1e24, { metalness: 0.5, roughness: 0.5 });
     for (const s of [-1, 1])
-      b.box({ x: netX, y: (HUB.openingHeight + 1.25) / 2, z: s * HUB.netWidth / 2 }, { x: 0.04, y: HUB.openingHeight + 1.25, z: 0.04 }, { material: steel, phys: MATERIAL.steel });
+      b.box({ x: netX, y: postH / 2, z: s * HUB.netWidth / 2 }, { x: 0.05, y: postH, z: 0.05 }, { material: dark, phys: MATERIAL.steel });
+    b.box({ x: netX, y: postH, z: 0 }, { x: 0.05, y: 0.05, z: HUB.netWidth }, { material: dark, phys: null });
 
     return {
       alliance: side,
@@ -307,8 +328,9 @@ export class Field {
     const T = sideTransform(side);
     const wallX = -HL; // blue frame
     const z0 = TOWER.centerZ;
-    const steel = b.material(0xa9b0b8, { metalness: 0.75, roughness: 0.3 });
     const color = ALLIANCE_COLOR[side];
+    // Powder-coated in the alliance color, like the field's TOWERs.
+    const steel = b.material(color, { metalness: 0.3, roughness: 0.45 });
     const p = (x: number, y: number, z: number) => T.p(x, y, z);
 
     // Base plate.

@@ -116,6 +116,32 @@ function netTex() {
   );
 }
 
+/** Smoked polycarbonate with netting stretched over it (a hopper wall seen from outside). */
+function smokeNetTex() {
+  return canvasTex(
+    'smoke-net',
+    64,
+    64,
+    (g) => {
+      g.fillStyle = '#2c333c';
+      g.fillRect(0, 0, 64, 64);
+      g.strokeStyle = '#0c0d10';
+      g.lineWidth = 2.2;
+      for (let k = -64; k <= 64; k += 16) {
+        g.beginPath();
+        g.moveTo(k, 0);
+        g.lineTo(k + 64, 64);
+        g.stroke();
+        g.beginPath();
+        g.moveTo(k + 64, 0);
+        g.lineTo(k, 64);
+        g.stroke();
+      }
+    },
+    [6, 5],
+  );
+}
+
 /** Sticker / decal texture with text lines (sponsor panels, team name plates). */
 export function decalTex(lines: string[], opts: { bg?: string; fg?: string; w?: number; h?: number; font?: string } = {}) {
   const key = `decal|${lines.join('|')}|${opts.bg}|${opts.fg}`;
@@ -195,6 +221,7 @@ export const M = {
   polycarb: () => mat(0xe6f0fa, { opacity: 0.18, rough: 0.05 }),
   smoke: () => mat(0x2a3038, { opacity: 0.55, rough: 0.1 }),
   smokeDark: () => mat(0x15181d, { opacity: 0.78, rough: 0.1 }),
+  smokeNet: () => mat(0xffffff, { opacity: 0.62, rough: 0.2, map: smokeNetTex() }),
   orange: () => mat(0xff7a1a, { rough: 0.5 }),
   green: () => mat(0x30c050, { rough: 0.5 }),
   copper: () => mat(0xb87333, { metal: 0.8, rough: 0.3 }),

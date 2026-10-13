@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { Kit, M, mat, decalTex } from './kit';
+import { Kit, M, mat } from './kit';
 import { swerveBase, Rig, type BuiltinRobot } from './common';
 import { inches } from '../../util/units';
 import { TURN_RATE, TURN_ACCEL } from '../../robot/schema';
@@ -81,7 +81,8 @@ export const r4414: BuiltinRobot = {
     const base = swerveBase(kit, rig, L, W, { electronics: [-inches(5), -W / 2 + inches(4.5)] });
     const y0 = base.railTop;
     const dark = mat(DARK, { metal: 0.45, rough: 0.45 });
-    const smoke = M.smoke();
+    // Smoked polycarb walls with netting over them, as on the robot.
+    const smoke = M.smokeNet();
 
     // ---------- drivetrain: teal pre-drilled tube with chamfered corners + rotor cross rails
     const tealTube = mat(TEAL, { metal: 0.5, rough: 0.4 });
@@ -121,18 +122,6 @@ export const r4414: BuiltinRobot = {
     kit.led('led_strip', [inches(1.5) - CH / 2, wallTop + inches(0.1), -(W / 2 + inches(0.3))], [L - CH - inches(3), inches(0.25), inches(0.3)], 0x39ff5a);
     kit.box('wall_back', [-L / 2 - inches(0.15), wy, 0], [inches(0.1), wallH, W - 2 * CH], smoke);
     kit.box('wall_rail_back', [-L / 2 - inches(0.3), wallTop - inches(0.35), 0], [inches(0.5), inches(0.7), W - 2 * CH], tealTube);
-    // Sponsor print on the smoked walls ("fabworks" on the CAD) + name plate.
-    for (const s of [-1, 1]) {
-      kit.sponsors(`sponsors_${s}`, [-inches(2), wy - inches(1.5), s * (W / 2 + inches(0.22))], L * 0.55, wallH * 0.38, ['fabworks', 'HAAS', 'Google', 'HighTide 4414'], 'xy', s as 1 | -1, undefined, '#c9d2d8');
-    }
-    const plate = new THREE.MeshBasicMaterial({ map: decalTex(['RIPCURRENT'], { fg: '#e8f4f3', w: 512, h: 96 }), transparent: true, depthWrite: false });
-    for (const s of [-1, 1]) {
-      const p = new THREE.Mesh(new THREE.PlaneGeometry(L * 0.55, inches(1.6)), plate);
-      p.position.set(-inches(2), wallTop - inches(3.6), s * (W / 2 + inches(0.24)));
-      if (s < 0) p.rotation.y = Math.PI;
-      kit.add(p, 'nameplate');
-    }
-
     // ---------- top deck: T-shaped pocketed truss across the width + turret plate
     const deckY = TP[1] + inches(0.5); // the turret plate is part of the T-shaped deck (Shooter V11)
     kit.pocketPlate('deck_arm', [-inches(3.5), deckY, 0], inches(4), W - inches(1), { color: DARK, plane: 'xz', cell: inches(2), rib: inches(0.35) });
@@ -149,18 +138,19 @@ export const r4414: BuiltinRobot = {
     const boxTop = wallTop - inches(0.6);
     // One continuous CF side plate per side: the hopper-box wall above the bumper, dropping in front of the bumper
     // face to carry the rollers at the carpet, with a slanted front edge over the intake mouth.
-    const mainC: [number, number, number] = [face + inches(3.3), inches(2.6), 0];
-    const botC: [number, number, number] = [face + inches(5), inches(1.1), 0];
-    const mouthTop = bumperTop + inches(7.2); // FUEL rolls up the ramp and under the front panel into the box
-    const nose = face + inches(6.1);
+    // The extension is a plain black box: solid CF sides from the carpet to the top of the hopper, a vertical front
+    // panel above the mouth, and the rollers tucked low under it.
+    const mainC: [number, number, number] = [face + inches(3), inches(2.6), 0];
+    const botC: [number, number, number] = [face + inches(4.4), inches(1.05), 0];
+    const mouthTop = bumperTop + inches(1.5); // FUEL rolls in under the front panel
+    const nose = face + inches(5.3);
     const sidePts: [number, number][] = [
       [bx0, bumperTop + inches(0.3)],
       [face + inches(0.3), bumperTop + inches(0.3)],
       [face + inches(0.3), inches(0.9)],
-      [nose, inches(0.5)],
-      [nose, inches(3.6)],
-      [face + inches(3.2), mouthTop],
-      [face + inches(1.2), boxTop],
+      [nose - inches(0.8), inches(0.6)],
+      [nose, inches(1.6)],
+      [nose, boxTop],
       [bx0, boxTop],
     ];
     const zs = W / 2 - inches(0.25);
@@ -170,23 +160,12 @@ export const r4414: BuiltinRobot = {
       sh.moveTo(sidePts[0][0], sidePts[0][1]);
       for (const q of sidePts.slice(1)) sh.lineTo(q[0], q[1]);
       sh.closePath();
-      // Lightening pockets in the lower (roller) section.
-      for (const [hx, hy] of [
-        [face + inches(2.2), inches(5.2)],
-        [face + inches(4.1), inches(5.6)],
-      ]) {
-        const hole = new THREE.Path();
-        hole.absarc(hx, hy, inches(0.7), 0, Math.PI * 2, true);
-        sh.holes.push(hole);
-      }
       const geo = new THREE.ExtrudeGeometry(sh, { depth: inches(0.12), bevelEnabled: false });
       geo.translate(0, 0, z - inches(0.06));
       kit.add(new THREE.Mesh(geo, M.cf()), `ext_side_${s}`, slide);
       // Riveted aluminum edge angle along the bottom of the box section + the slanted nose edge.
-      kit.box(`ext_angle_bot_${s}`, [(bx0 + face) / 2, bumperTop + inches(0.6), z - s * inches(0.35)], [face - bx0, inches(0.6), inches(0.6)], M.alu(), slide);
-      const ex = (face + inches(3.2) + face + inches(1.2)) / 2;
-      const ang = Math.atan2(boxTop - mouthTop, inches(1.2) - inches(3.2));
-      kit.box(`ext_angle_nose_${s}`, [ex, (mouthTop + boxTop) / 2, z - s * inches(0.35)], [Math.hypot(boxTop - mouthTop, inches(2)), inches(0.6), inches(0.6)], M.alu(), slide, [0, 0, ang]);
+      kit.box(`ext_angle_bot_${s}`, [(bx0 + face) / 2, bumperTop + inches(0.6), z - s * inches(0.35)], [face - bx0, inches(0.6), inches(0.6)], M.anodBlack(), slide);
+      kit.box(`ext_angle_nose_${s}`, [nose - inches(0.35), (mouthTop + boxTop) / 2, z - s * inches(0.35)], [inches(0.6), boxTop - mouthTop, inches(0.6)], M.anodBlack(), slide);
       // Roller bearings (flanged) on the plate.
       for (const [c, r] of [
         [mainC, inches(0.55)],
@@ -203,23 +182,19 @@ export const r4414: BuiltinRobot = {
       const rz = s * (W / 2 - inches(1.6));
       const r0 = L / 2 - inches(9);
       const r1 = face + inches(0.3);
-      kit.box(`rack_${s}`, [(r0 + r1) / 2, inches(5.2), rz], [r1 - r0, inches(0.9), inches(0.5)], mat(0xe9eef3, { opacity: 0.75, rough: 0.2 }), slide);
+      kit.box(`rack_${s}`, [(r0 + r1) / 2, inches(5.2), rz], [r1 - r0, inches(0.9), inches(0.5)], M.black(), slide);
       const nT = Math.floor((r1 - r0) / inches(0.65));
-      for (let k = 0; k < nT; k++) kit.box(`rack_tooth_${s}_${k}`, [r0 + inches(0.4) + k * inches(0.65), inches(5.75), rz], [inches(0.25), inches(0.25), inches(0.5)], mat(0xd8dee5), slide);
+      for (let k = 0; k < nT; k++) kit.box(`rack_tooth_${s}_${k}`, [r0 + inches(0.4) + k * inches(0.65), inches(5.75), rz], [inches(0.25), inches(0.25), inches(0.5)], M.black(), slide);
       kit.motor(`rack_x44_${s}`, [L / 2 - inches(3), inches(7.5), s * (W / 2 - inches(3))], 'y', undefined, true);
       kit.pulley(`rack_pinion_${s}`, [L / 2 - inches(3), inches(6.2), rz], inches(0.6), { color: 0x2a2c31 });
     }
-    // Slanted CF front panel over the intake mouth, top chamfer, box floor and a polycarb ramp from the rollers up
-    // over the bumper into the box.
-    const fpLen = Math.hypot(boxTop - mouthTop, inches(2));
-    kit.box('ext_front', [face + inches(2.2), (mouthTop + boxTop) / 2, 0], [inches(0.09), fpLen, 2 * zs], M.cf(), slide, [0, 0, Math.atan2(inches(2), boxTop - mouthTop)]);
-    kit.box('ext_front_lip', [face + inches(3.2), mouthTop, 0], [inches(0.7), inches(0.5), 2 * zs], M.alu(), slide);
+    // Vertical CF front panel over the intake mouth and the box floor.
+    kit.box('ext_front', [nose - inches(0.05), (mouthTop + boxTop) / 2, 0], [inches(0.1), boxTop - mouthTop, 2 * zs], M.cf(), slide);
+    kit.box('ext_front_lip', [nose - inches(0.3), mouthTop, 0], [inches(0.6), inches(0.5), 2 * zs], M.anodBlack(), slide);
     kit.box('ext_floor', [(bx0 + face) / 2, bumperTop + inches(0.3), 0], [face - bx0, inches(0.12), 2 * zs - inches(0.2)], dark, slide);
-    const rampLen = Math.hypot(inches(2.6), bumperTop - inches(3.8));
-    kit.box('ext_ramp', [face + inches(1.4), (bumperTop + inches(3.8)) / 2 + inches(0.3), 0], [rampLen, inches(0.1), 2 * zs - inches(0.3)], mat(0xe6f0fa, { opacity: 0.45, rough: 0.1 }), slide, [0, 0, -Math.atan2(bumperTop - inches(3.8), inches(2.6))]);
-    // 3in 1/8in-wall polycarbonate main roller + 1.5in bottom roller (X44 1.5:1) between the plates.
-    const mainRoller = kit.tubeRoller('intake_main', mainC[0], mainC[1], -zs, zs, inches(1.5), 0xeef2f6, slide);
-    const botRoller = kit.tubeRoller('intake_bottom', botC[0], botC[1], -zs, zs, inches(0.75), 0xd5dde6, slide);
+    // 3in main roller + 1.5in bottom roller (X44 1.5:1) low between the plates, dark grip tubing.
+    const mainRoller = kit.tubeRoller('intake_main', mainC[0], mainC[1], -zs, zs, inches(1.5), 0x34383f, slide);
+    const botRoller = kit.tubeRoller('intake_bottom', botC[0], botC[1], -zs, zs, inches(0.75), 0x2a2d33, slide);
     kit.motor('intake_x44', [botC[0] - inches(0.6), botC[1] + inches(2.4), -(zs + inches(0.9))], 'z', slide, true);
     kit.belt('intake_bot_belt', [botC[0] - inches(0.6), botC[1] + inches(2.4)], [botC[0], botC[1]], -(zs + inches(0.3)), slide);
 
