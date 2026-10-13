@@ -18,7 +18,7 @@ const L = inches(25);
 const W = inches(29);
 const H = inches(21);
 const TP: [number, number, number] = [-L / 2 + inches(6), inches(13), 0];
-const DARK = 0x26292f;
+const DARK = 0xb9bfc7; // bare aluminum truss (photos / CAD)
 
 export const r1690: BuiltinRobot = {
   def: {

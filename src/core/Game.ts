@@ -181,7 +181,7 @@ export class Game {
     switch (to) {
       case 'pause':
         this.showBanner('AUTO COMPLETE — ROBOTS DISABLED', this.match.autoTeleopGap);
-        sfx.buzzer();
+        sfx.buzzer('autoEnd');
         break;
       case 'transition':
         this.showBanner('TELEOP — TRANSITION SHIFT', 2.5);

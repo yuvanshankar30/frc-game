@@ -10,6 +10,18 @@ import { inches } from '../../util/units';
 type V3 = [number, number, number];
 const matCache = new Map<string, THREE.Material>();
 
+/** Default plate stock: bare 6061 aluminum. */
+export const ALU_PLATE = 0xc3c9d0;
+
+/** Shading for machined parts: light colors read as bare/clear-anodized aluminum (shiny), dark as anodized/powder. */
+export function machined(color: number) {
+  const r = (color >> 16) & 255;
+  const g = (color >> 8) & 255;
+  const b = color & 255;
+  const luma = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+  return luma > 0.55 ? mat(color, { metal: 0.9, rough: 0.28 }) : mat(color, { metal: 0.45, rough: 0.45 });
+}
+
 export function mat(color: number, opts: { metal?: number; rough?: number; opacity?: number; emissive?: number; map?: THREE.Texture } = {}) {
   const key = `${color}|${opts.metal ?? 0}|${opts.rough ?? 0.6}|${opts.opacity ?? 1}|${opts.emissive ?? 0}|${opts.map?.uuid ?? ''}`;
   let m = matCache.get(key);
@@ -332,7 +344,7 @@ export class Kit {
   /** Pocketed side plate standing in the XY plane (normal along Z). */
   pocketPlate(name: string, c: V3, w: number, h: number, opts: { t?: number; color?: number; plane?: 'xy' | 'zy' | 'xz'; rib?: number; cell?: number; parent?: THREE.Object3D } = {}) {
     const shape = pocketedRectShape(w, h, opts.rib ?? inches(0.5), opts.cell ?? inches(3));
-    return this.extrude(name, shape, opts.t ?? inches(0.25), mat(opts.color ?? 0x24272d, { metal: 0.45, rough: 0.45 }), opts.plane ?? 'xy', c, opts.parent);
+    return this.extrude(name, shape, opts.t ?? inches(0.25), machined(opts.color ?? ALU_PLATE), opts.plane ?? 'xy', c, opts.parent);
   }
 
   /**
@@ -359,7 +371,7 @@ export class Kit {
 
   /** Hood / climber sector gear plate in the XY plane, pivot at c. Angles in radians. */
   sectorPlate(name: string, c: V3, r: number, a0: number, a1: number, opts: { t?: number; color?: number; parent?: THREE.Object3D; teeth?: number } = {}) {
-    return this.extrude(name, sectorShape(r, a0, a1, opts.teeth ?? 24), opts.t ?? inches(0.25), mat(opts.color ?? 0x24272d, { metal: 0.5, rough: 0.4 }), 'xy', c, opts.parent);
+    return this.extrude(name, sectorShape(r, a0, a1, opts.teeth ?? 24), opts.t ?? inches(0.25), machined(opts.color ?? ALU_PLATE), 'xy', c, opts.parent);
   }
 
   /** Spoked pulley / sprocket disc (XY plane, axis along Z). */

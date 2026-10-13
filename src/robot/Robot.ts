@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { RAPIER, type World, GROUP, groups, ALL, MATERIAL } from '../physics/world';
+import { RAPIER, type World, GROUP, groups, ALL, MATERIAL, ROBOT_DOMINANCE } from '../physics/world';
 import type { RobotDefinition } from './schema';
 import { assemble, stepJoint, jointProgress, type Assembly, type JointRT } from './assemble';
 import { desiredSpeeds, limitSpeeds, referenceToRobot, swerveModuleStates, type ChassisSpeeds } from './drivetrains/kinematics';
@@ -45,6 +45,9 @@ export interface RobotStats {
   shots: number;
   scored: number;
   intaked: number;
+  /** Balls lost on the way in (entry failed) / bounced out of the hopper afterwards. */
+  missedEntry?: number;
+  spilled?: number;
 }
 
 /** Lift (m) of the robot's floor reference to reach each TOWER level. */
@@ -155,10 +158,12 @@ export class Robot {
         },
         { x: 0, y: 0, z: 0, w: 1 },
       );
-    desc.setCcdEnabled(true);
+    // No robot CCD: CCD ignores dominance, so in a FUEL pile it would clamp every step to the first ball contact
+    // (the robot crawls while reporting full speed). At ≤5 m/s a step moves <4.5 cm against 9 cm bumpers and
+    // thick field walls, so discrete collision is enough; FUEL that would tunnel is handled by clearUnderside().
     // Robots dominate FUEL: a 0.2 kg ball can push other balls but can never lift, tilt or slow a 50+ kg robot,
     // so FUEL wedged under the frame is squeezed out instead of beaching it. Robot↔robot/field contacts are unchanged.
-    desc.setDominanceGroup(10);
+    desc.setDominanceGroup(ROBOT_DOMINANCE);
     this.body = world.createRigidBody(desc);
     // Collider layout (anti-beaching):
     //  - a low bumper ring around the perimeter that pushes FUEL and other robots,
@@ -275,7 +280,8 @@ export class Robot {
     return new THREE.Vector3(
       c.x + entrySide * (s.x / 2 - r - 0.03),
       c.y + s.y / 2 - Math.min(Robot.ENTRY_GAP, s.y * 0.6) / 2,
-      clamp(z, c.z - s.z / 2 + r, c.z + s.z / 2 - r),
+      // Keep the target clear of the walls so it's always strictly inside the hopper volume.
+      clamp(z, c.z - s.z / 2 + r + 0.03, c.z + s.z / 2 - r - 0.03),
     );
   }
 
@@ -361,7 +367,9 @@ export class Robot {
     const r = FUEL.radius;
     for (const [i, t] of this.entering) {
       const lp = this.toLocal(fuel.position(i));
-      const inside = Math.abs(lp.x - c.x) < s.x / 2 - r && Math.abs(lp.y - c.y) < s.y / 2 - r && Math.abs(lp.z - c.z) < s.z / 2 - r;
+      const tgt = this.enterTarget.get(i);
+      const inside =
+        (Math.abs(lp.x - c.x) < s.x / 2 - r && Math.abs(lp.y - c.y) < s.y / 2 - r && Math.abs(lp.z - c.z) < s.z / 2 - r) || (!!tgt && lp.distanceTo(tgt) < 0.05);
       if (inside || t > 0.6 || fuel.state[i] !== 'stored') {
         if (fuel.state[i] === 'stored') {
           if (inside) fuel.colliders[i].setCollisionGroups(groups(GROUP.STORED, GROUP.HOPPER | GROUP.STORED));
@@ -369,6 +377,7 @@ export class Robot {
             // No room / didn't make it in: it bounces back out onto the field.
             const k = this.stored.indexOf(i);
             if (k >= 0) this.stored.splice(k, 1);
+            this.stats.missedEntry = (this.stats.missedEntry ?? 0) + 1;
             this.releaseOutside(fuel, i);
           }
         }
@@ -377,13 +386,12 @@ export class Robot {
       } else {
         this.entering.set(i, t + dt);
         // Home in on the (moving, rotating) entry point so the ball still lands in the hopper.
-        const tgt = this.enterTarget.get(i);
         if (tgt && fuel.state[i] === 'stored') {
           const tw = this.toWorld(tgt, new THREE.Vector3());
           const p = fuel.position(i);
           const left = Math.max(0.06, 0.22 - t);
           const pv = this.pointVelocity(tw);
-          fuel.bodies[i].setLinvel({ x: (tw.x - p.x) / left + pv.x, y: (tw.y - p.y) / left + pv.y + 4.9 * left, z: (tw.z - p.z) / left + pv.z }, true);
+          fuel.bodies[i].setLinvel({ x: (tw.x - p.x) / left + pv.x, y: (tw.y - p.y) / left + pv.y + 9.81 * dt, z: (tw.z - p.z) / left + pv.z }, true);
         }
       }
     }
@@ -393,6 +401,7 @@ export class Robot {
       const lp = this.toLocal(fuel.position(i));
       const top = s.y / 2 + (this.def.storage.net?.stretch ?? 0);
       if (Math.abs(lp.x - c.x) > s.x / 2 + m || lp.y - c.y > top + m || lp.y - c.y < -s.y / 2 - m || Math.abs(lp.z - c.z) > s.z / 2 + m) {
+        this.stats.spilled = (this.stats.spilled ?? 0) + 1;
         this.releaseOutside(fuel, i);
         this.stored.splice(k, 1);
       }

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { RAPIER, type World, GROUP, groups, ALL, MATERIAL } from '../physics/world';
+import { RAPIER, type World, GROUP, groups, ALL, MATERIAL, ROBOT_DOMINANCE } from '../physics/world';
 import { FUEL } from './rebuilt/dims';
 import { FUEL_AIR_DAMPING } from '../robot/ballistics';
 
@@ -82,6 +82,7 @@ export class FuelSystem {
     b.setLinvel(v ? { x: v.x, y: v.y, z: v.z } : { x: 0, y: 0, z: 0 }, true);
     b.setAngvel({ x: 0, y: 0, z: 0 }, true);
     this.state[i] = 'field';
+    b.setDominanceGroup(0);
     this.lastShooter[i] = shooter;
     this.colliders[i].setCollisionGroups(FIELD_GROUPS);
     this.bodies[i].setLinearDamping(FUEL_AIR_DAMPING);
@@ -109,6 +110,7 @@ export class FuelSystem {
     b.setAngvel({ x: 0, y: 0, z: 0 }, true);
     b.setLinearDamping(0.6);
     this.colliders[i].setCollisionGroups(STORED_GROUPS);
+    b.setDominanceGroup(ROBOT_DOMINANCE);
     this.state[i] = 'stored';
     this.ghostUntil[i] = -1;
     this.shotAt[i] = -1;

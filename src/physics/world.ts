@@ -21,6 +21,13 @@ export function createWorld() {
 }
 
 /** Collision groups: high 16 bits = membership, low 16 bits = filter. */
+/**
+ * Rapier dominance: robots outrank loose FUEL, so a 0.2 kg ball can never lift, tilt or slow a robot. Carried FUEL is
+ * raised to the robot's level while stored — a dominant body ignores lower-ranked bodies' contacts entirely, so
+ * otherwise the hopper walls would pass right through the balls they carry.
+ */
+export const ROBOT_DOMINANCE = 10;
+
 export const GROUP = {
   FIELD: 0x0001,
   ROBOT: 0x0002,

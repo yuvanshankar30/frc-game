@@ -140,58 +140,82 @@ export const r4414: BuiltinRobot = {
     const bumperTop = inches(2.5) + inches(5.5);
     const face = L / 2 + bt; // front bumper face
     const bx0 = L / 2 - inches(5); // box rear edge (inside the frame, overlaps the walls when stowed)
-    const bx1 = face + inches(0.3); // box front face
     const boxTop = wallTop - inches(0.6);
+    // One continuous CF side plate per side: the hopper-box wall above the bumper, dropping in front of the bumper
+    // face to carry the rollers at the carpet, with a slanted front edge over the intake mouth.
+    const mainC: [number, number, number] = [face + inches(3.3), inches(2.6), 0];
+    const botC: [number, number, number] = [face + inches(5), inches(1.1), 0];
+    const mouthTop = bumperTop + inches(7.2); // FUEL rolls up the ramp and under the front panel into the box
+    const nose = face + inches(6.1);
+    const sidePts: [number, number][] = [
+      [bx0, bumperTop + inches(0.3)],
+      [face + inches(0.3), bumperTop + inches(0.3)],
+      [face + inches(0.3), inches(0.9)],
+      [nose, inches(0.5)],
+      [nose, inches(3.6)],
+      [face + inches(3.2), mouthTop],
+      [face + inches(1.2), boxTop],
+      [bx0, boxTop],
+    ];
+    const zs = W / 2 - inches(0.25);
     for (const s of [-1, 1]) {
-      const z = s * (W / 2 - inches(0.25));
-      // CF side plate: from just above the bumper to the wall top, top-front corner chamfered down.
+      const z = s * zs;
       const sh = new THREE.Shape();
-      sh.moveTo(bx0, bumperTop + inches(0.3));
-      sh.lineTo(bx1, bumperTop + inches(0.3));
-      sh.lineTo(bx1, boxTop - inches(4));
-      sh.lineTo(bx1 - inches(3.5), boxTop);
-      sh.lineTo(bx0, boxTop);
+      sh.moveTo(sidePts[0][0], sidePts[0][1]);
+      for (const q of sidePts.slice(1)) sh.lineTo(q[0], q[1]);
       sh.closePath();
-      const geo = new THREE.ExtrudeGeometry(sh, { depth: inches(0.09), bevelEnabled: false });
-      geo.translate(0, 0, z - inches(0.045));
+      // Lightening pockets in the lower (roller) section.
+      for (const [hx, hy] of [
+        [face + inches(2.2), inches(5.2)],
+        [face + inches(4.1), inches(5.6)],
+      ]) {
+        const hole = new THREE.Path();
+        hole.absarc(hx, hy, inches(0.7), 0, Math.PI * 2, true);
+        sh.holes.push(hole);
+      }
+      const geo = new THREE.ExtrudeGeometry(sh, { depth: inches(0.12), bevelEnabled: false });
+      geo.translate(0, 0, z - inches(0.06));
       kit.add(new THREE.Mesh(geo, M.cf()), `ext_side_${s}`, slide);
-      // Riveted aluminum edge angle along the front + bottom.
-      kit.box(`ext_angle_front_${s}`, [bx1 - inches(0.35), (bumperTop + boxTop - inches(4)) / 2, z], [inches(0.7), boxTop - inches(4) - bumperTop, inches(0.7)], dark, slide);
-      kit.box(`ext_angle_bot_${s}`, [(bx0 + bx1) / 2, bumperTop + inches(0.6), z], [bx1 - bx0, inches(0.6), inches(0.7)], dark, slide);
-      // Roller side plate: drops from the box down in front of the bumper to carry the rollers.
-      const rp = new THREE.Shape();
-      rp.moveTo(bx1 - inches(1), bumperTop + inches(1.5));
-      rp.lineTo(face + inches(5.4), bumperTop - inches(1));
-      rp.lineTo(face + inches(5.4), inches(0.6));
-      rp.lineTo(face + inches(0.4), inches(0.6));
-      rp.lineTo(face + inches(0.4), bumperTop - inches(1));
-      rp.closePath();
-      const rg = new THREE.ExtrudeGeometry(rp, { depth: inches(0.25), bevelEnabled: false });
-      rg.translate(0, 0, s * (W / 2 + bt * 0.15) - inches(0.125));
-      kit.add(new THREE.Mesh(rg, dark), `roller_plate_${s}`, slide);
-      // 10DP racks (doubled polycarbonate) passing through the ~1.3in bumper gaps near the corners.
+      // Riveted aluminum edge angle along the bottom of the box section + the slanted nose edge.
+      kit.box(`ext_angle_bot_${s}`, [(bx0 + face) / 2, bumperTop + inches(0.6), z - s * inches(0.35)], [face - bx0, inches(0.6), inches(0.6)], M.alu(), slide);
+      const ex = (face + inches(3.2) + face + inches(1.2)) / 2;
+      const ang = Math.atan2(boxTop - mouthTop, inches(1.2) - inches(3.2));
+      kit.box(`ext_angle_nose_${s}`, [ex, (mouthTop + boxTop) / 2, z - s * inches(0.35)], [Math.hypot(boxTop - mouthTop, inches(2)), inches(0.6), inches(0.6)], M.alu(), slide, [0, 0, ang]);
+      // Roller bearings (flanged) on the plate.
+      for (const [c, r] of [
+        [mainC, inches(0.55)],
+        [botC, inches(0.4)],
+      ] as const) kit.cyl(`ext_bearing_${s}`, [c[0], c[1], s * (zs + inches(0.12))], r, inches(0.12), 'z', M.steel(), slide, 16);
+      // 2× X60 on the side plates (3.45:1 belt to the main roller), mounted outboard above the bumper line.
+      const mp: [number, number] = [face + inches(1.4), bumperTop + inches(2.6)];
+      kit.motor(`intake_x60_${s}`, [mp[0], mp[1], s * (zs + inches(1.1))], 'z', slide);
+      kit.pulley(`intake_pulley_m_${s}`, [mp[0], mp[1], s * (zs + inches(0.3))], inches(0.6), { parent: slide, color: 0x2a2c31 });
+      kit.pulley(`intake_pulley_r_${s}`, [mainC[0], mainC[1], s * (zs + inches(0.3))], inches(1.2), { parent: slide, color: 0x2a2c31, spokes: 5 });
+      kit.belt(`intake_belt_a_${s}`, [mp[0] - inches(0.6), mp[1]], [mainC[0] - inches(1.2), mainC[1]], s * (zs + inches(0.3)), slide);
+      kit.belt(`intake_belt_b_${s}`, [mp[0] + inches(0.6), mp[1]], [mainC[0] + inches(1.2), mainC[1]], s * (zs + inches(0.3)), slide);
+      // 10DP racks (doubled 0.25in polycarbonate) running back through the ~1.3in bumper gaps into the frame.
       const rz = s * (W / 2 - inches(1.6));
-      kit.box(`rack_${s}`, [L / 2 - inches(1), inches(5.2), rz], [inches(14), inches(0.9), inches(0.5)], mat(0xe9eef3, { opacity: 0.7, rough: 0.2 }), slide);
-      for (let k = 0; k < 20; k++) kit.box(`rack_tooth_${s}_${k}`, [L / 2 - inches(7.6) + k * inches(0.65), inches(5.75), rz], [inches(0.25), inches(0.25), inches(0.5)], mat(0xd8dee5), slide);
+      const r0 = L / 2 - inches(9);
+      const r1 = face + inches(0.3);
+      kit.box(`rack_${s}`, [(r0 + r1) / 2, inches(5.2), rz], [r1 - r0, inches(0.9), inches(0.5)], mat(0xe9eef3, { opacity: 0.75, rough: 0.2 }), slide);
+      const nT = Math.floor((r1 - r0) / inches(0.65));
+      for (let k = 0; k < nT; k++) kit.box(`rack_tooth_${s}_${k}`, [r0 + inches(0.4) + k * inches(0.65), inches(5.75), rz], [inches(0.25), inches(0.25), inches(0.5)], mat(0xd8dee5), slide);
       kit.motor(`rack_x44_${s}`, [L / 2 - inches(3), inches(7.5), s * (W / 2 - inches(3))], 'y', undefined, true);
       kit.pulley(`rack_pinion_${s}`, [L / 2 - inches(3), inches(6.2), rz], inches(0.6), { color: 0x2a2c31 });
-      // Bent aluminum impact guard at the outer front corner.
-      kit.box(`guard_${s}`, [face + inches(5), inches(3.2), s * (W / 2 + bt * 0.3)], [inches(1.6), inches(4.5), inches(0.12)], M.alu(), slide, [0, 0, 0.35]);
     }
-    kit.panel('ext_front', [bx1, (bumperTop + boxTop - inches(4)) / 2 + inches(0.3), 0], W - inches(0.5), boxTop - inches(4) - bumperTop, M.cf(), 'zy', slide);
-    const chamferPanel = kit.box('ext_chamfer', [bx1 - inches(1.75), boxTop - inches(2), 0], [inches(0.08), inches(4.9), W - inches(0.5)], M.cf(), slide);
-    chamferPanel.rotation.z = Math.PI / 4;
-    kit.box('ext_floor', [(bx0 + bx1) / 2, bumperTop + inches(0.3), 0], [bx1 - bx0, inches(0.12), W - inches(0.6)], dark, slide);
-    // 3in 1/8in-wall polycarbonate main roller + 1.5in bottom bar, in front of the bumper face.
-    const mainC: [number, number, number] = [face + inches(1.8), inches(2.3), 0];
-    const botC: [number, number, number] = [face + inches(4.1), inches(0.95), 0];
-    const mainRoller = kit.tubeRoller('intake_main', mainC[0], mainC[1], -W / 2 - bt * 0.1, W / 2 + bt * 0.1, inches(1.5), 0xeef2f6, slide);
-    const botRoller = kit.tubeRoller('intake_bottom', botC[0], botC[1], -W / 2 - bt * 0.1, W / 2 + bt * 0.1, inches(0.75), 0xd5dde6, slide);
-    for (const s of [-1, 1]) {
-      kit.motor(`intake_x60_${s}`, [face + inches(2.5), bumperTop + inches(2.5), s * (W / 2 - inches(3))], 'z', slide);
-      kit.belt(`intake_belt_${s}`, [face + inches(2.5), bumperTop + inches(2.5)], [mainC[0], mainC[1]], s * (W / 2 + bt * 0.25));
-    }
-    kit.motor('intake_x44', [face + inches(3.5), bumperTop + inches(1.5), 0], 'z', slide, true);
+    // Slanted CF front panel over the intake mouth, top chamfer, box floor and a polycarb ramp from the rollers up
+    // over the bumper into the box.
+    const fpLen = Math.hypot(boxTop - mouthTop, inches(2));
+    kit.box('ext_front', [face + inches(2.2), (mouthTop + boxTop) / 2, 0], [inches(0.09), fpLen, 2 * zs], M.cf(), slide, [0, 0, Math.atan2(inches(2), boxTop - mouthTop)]);
+    kit.box('ext_front_lip', [face + inches(3.2), mouthTop, 0], [inches(0.7), inches(0.5), 2 * zs], M.alu(), slide);
+    kit.box('ext_floor', [(bx0 + face) / 2, bumperTop + inches(0.3), 0], [face - bx0, inches(0.12), 2 * zs - inches(0.2)], dark, slide);
+    const rampLen = Math.hypot(inches(2.6), bumperTop - inches(3.8));
+    kit.box('ext_ramp', [face + inches(1.4), (bumperTop + inches(3.8)) / 2 + inches(0.3), 0], [rampLen, inches(0.1), 2 * zs - inches(0.3)], mat(0xe6f0fa, { opacity: 0.45, rough: 0.1 }), slide, [0, 0, -Math.atan2(bumperTop - inches(3.8), inches(2.6))]);
+    // 3in 1/8in-wall polycarbonate main roller + 1.5in bottom roller (X44 1.5:1) between the plates.
+    const mainRoller = kit.tubeRoller('intake_main', mainC[0], mainC[1], -zs, zs, inches(1.5), 0xeef2f6, slide);
+    const botRoller = kit.tubeRoller('intake_bottom', botC[0], botC[1], -zs, zs, inches(0.75), 0xd5dde6, slide);
+    kit.motor('intake_x44', [botC[0] - inches(0.6), botC[1] + inches(2.4), -(zs + inches(0.9))], 'z', slide, true);
+    kit.belt('intake_bot_belt', [botC[0] - inches(0.6), botC[1] + inches(2.4)], [botC[0], botC[1]], -(zs + inches(0.3)), slide);
 
     // ---------- Dye Rotor (V10): spoked pan, curved wall on standoffs, center tower, spiral hook
     const ry = y0 + inches(0.4);

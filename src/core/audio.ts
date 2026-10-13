@@ -1,11 +1,26 @@
 /**
- * Synthesized audio (no asset files): FRC-style field cues and continuous robot mechanism sounds.
+ * FRC-style field cues and continuous robot mechanism sounds. Everything is synthesized by default; any field cue can
+ * be replaced by a recording dropped into `public/sfx/` (see SAMPLE_FILES and public/sfx/README.md).
  *
  * Field cues follow a real FRC match: "Charge!" fanfare at the start, a buzzer when AUTO ends, three bells
  * when TELEOP starts, a steam whistle for END GAME, and a buzzer at the end of the match.
  * Robot loops are driven every frame from robot state (drive speed, flywheel spin, intake, indexer).
  */
+/** Field cue → file name (without extension) looked up in public/sfx/. mp3, ogg or wav. */
+export const SAMPLE_FILES = {
+  start: 'match-start',
+  autoEnd: 'auto-end',
+  teleop: 'teleop-start',
+  shift: 'shift',
+  endgame: 'endgame',
+  end: 'match-end',
+  countdown: 'countdown',
+} as const;
+type Cue = keyof typeof SAMPLE_FILES;
+
 class AudioEngine {
+  private samples: Partial<Record<Cue, AudioBuffer>> = {};
+  private samplesLoaded = false;
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
   private sfxBus: GainNode | null = null;
@@ -39,7 +54,43 @@ class AudioEngine {
     }
     if (this.ctx.state === 'suspended') void this.ctx.resume();
     this.master!.gain.value = this.volume;
+    if (!this.samplesLoaded) {
+      this.samplesLoaded = true;
+      void this.loadSamples(this.ctx);
+    }
     return this.ctx;
+  }
+
+  /** Load any recordings present in public/sfx/ (missing files fall back to the synthesized cue). */
+  private async loadSamples(ctx: AudioContext) {
+    const base = `${import.meta.env.BASE_URL ?? '/'}sfx/`;
+    await Promise.all(
+      (Object.keys(SAMPLE_FILES) as Cue[]).map(async (cue) => {
+        for (const ext of ['mp3', 'ogg', 'wav']) {
+          try {
+            const res = await fetch(`${base}${SAMPLE_FILES[cue]}.${ext}`);
+            // The dev server answers unknown paths with index.html, so require an audio content type.
+            if (!res.ok || !(res.headers.get('content-type') ?? '').startsWith('audio')) continue;
+            this.samples[cue] = await ctx.decodeAudioData(await res.arrayBuffer());
+            return;
+          } catch {
+            // try the next extension
+          }
+        }
+      }),
+    );
+  }
+
+  /** Play a recorded cue if one was provided. Returns false to fall back to synthesis. */
+  private sample(cue: Cue) {
+    const buf = this.samples[cue];
+    const ctx = this.ctx;
+    if (!buf || !ctx) return false;
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.connect(this.fieldBus!);
+    src.start();
+    return true;
   }
 
   private gate(key: string, minGap: number) {
@@ -117,7 +168,7 @@ class AudioEngine {
   /** Match start: bugle "Charge!" (G4 C5 E5 G5 … E5 G5). */
   charge() {
     const ctx = this.ensure();
-    if (!ctx) return;
+    if (!ctx || this.sample('start')) return;
     const t = ctx.currentTime + 0.05;
     const seq: [number, number, number][] = [
       [392, 0, 0.16],
@@ -134,9 +185,9 @@ class AudioEngine {
   }
 
   /** AUTO / match end buzzer. */
-  buzzer() {
+  buzzer(cue: 'autoEnd' | 'end' = 'end') {
     const ctx = this.ensure();
-    if (!ctx) return;
+    if (!ctx || this.sample(cue)) return;
     const t = ctx.currentTime + 0.02;
     for (const f of [92, 138, 185]) this.note(this.fieldBus!, 'square', f, t, 1.6, 0.09, { attack: 0.01, filter: 1800 });
     this.burst(this.fieldBus!, t, 1.6, 0.05, 'bandpass', 700, 0.6);
@@ -145,7 +196,7 @@ class AudioEngine {
   /** TELEOP start: three struck bells. */
   bells() {
     const ctx = this.ensure();
-    if (!ctx) return;
+    if (!ctx || this.sample('teleop')) return;
     const t = ctx.currentTime + 0.02;
     for (let k = 0; k < 3; k++) this.strike(t + k * 0.42, 880, 0.2);
   }
@@ -164,7 +215,7 @@ class AudioEngine {
   /** END GAME: steam whistle. */
   whistle() {
     const ctx = this.ensure();
-    if (!ctx) return;
+    if (!ctx || this.sample('endgame')) return;
     const t = ctx.currentTime + 0.02;
     for (const f of [466, 587, 698]) this.note(this.fieldBus!, 'sawtooth', f, t, 1.3, 0.07, { attack: 0.08, vibrato: 4, filter: 3200 });
     this.burst(this.fieldBus!, t, 1.3, 0.06, 'bandpass', 2400, 1.5);
@@ -173,7 +224,7 @@ class AudioEngine {
   /** Shift change: two-tone chime. */
   chime(active: boolean) {
     const ctx = this.ensure();
-    if (!ctx) return;
+    if (!ctx || this.sample('shift')) return;
     const t = ctx.currentTime + 0.02;
     const [a, b] = active ? [784, 1175] : [1175, 784];
     this.note(this.fieldBus!, 'triangle', a, t, 0.35, 0.16);
@@ -183,7 +234,7 @@ class AudioEngine {
   /** Pre-match countdown beep (final = higher). */
   countdown(final = false) {
     const ctx = this.ensure();
-    if (!ctx) return;
+    if (!ctx || this.sample('countdown')) return;
     this.note(this.fieldBus!, 'square', final ? 1046 : 660, ctx.currentTime + 0.01, 0.16, 0.08, { filter: 2400 });
   }
 
@@ -295,7 +346,8 @@ class AudioEngine {
     drive.osc[0].frequency.setTargetAtTime(df, t, 0.05);
     drive.osc[1].frequency.setTargetAtTime(df * 1.5, t, 0.05);
     drive.filter!.frequency.setTargetAtTime(df * 2, t, 0.05);
-    drive.gain.gain.setTargetAtTime(k * (0.02 + sp * 0.11), t, 0.06);
+    // Silent when stopped; motor whine fades in with speed.
+    drive.gain.gain.setTargetAtTime(k * (sp < 0.03 ? 0 : 0.015 + sp * 0.11), t, 0.06);
 
     const fly = this.loop('fly', (c, out) => {
       const o1 = c.createOscillator();
@@ -319,12 +371,15 @@ class AudioEngine {
       const f = c.createBiquadFilter();
       f.type = 'lowpass';
       f.frequency.value = 700;
+      // Tremolo modulates an inner gain stage, so the loop's output gain (0 when the intake is off) still silences it.
       const trem = c.createOscillator();
       const tg = c.createGain();
+      const inner = c.createGain();
       trem.frequency.value = 23;
       tg.gain.value = 0.4;
-      trem.connect(tg).connect(out.gain);
-      o.connect(f).connect(out);
+      inner.gain.value = 0.6;
+      trem.connect(tg).connect(inner.gain);
+      o.connect(f).connect(inner).connect(out);
       o.start();
       trem.start();
       return { osc: [o, trem], filter: f };
