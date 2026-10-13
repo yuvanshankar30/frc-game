@@ -25,11 +25,8 @@ export class MatchController {
   /** Alliance whose HUB is inactive during SHIFT 1 (decided after AUTO). */
   firstInactive: Alliance | null = null;
   score: Record<Alliance, AllianceScore> = { blue: emptyScore(), red: emptyScore() };
-  /** Match time (s since AUTO started), keeps running for the scoring grace window after the match. */
+  /** Match time (s since AUTO started), used for the AUTO→TELEOP scoring grace window. */
   private matchT = 0;
-  /** matchT when each HUB last went inactive (FUEL still counts for GRACE seconds after). */
-  private deactivatedAt: Record<Alliance, number | null> = { blue: null, red: null };
-  private wasActive: Record<Alliance, boolean> = { blue: false, red: false };
   private autoEndAt: number | null = null;
   private rng: () => number;
   private listeners: ((p: Phase) => void)[] = [];
@@ -48,8 +45,6 @@ export class MatchController {
     this.firstInactive = null;
     this.matchT = 0;
     this.autoEndAt = null;
-    this.deactivatedAt = { blue: null, red: null };
-    this.wasActive = { blue: true, red: true };
     this.currentShift = 0;
     this.teleopT = 0;
     this.setPhase('auto');
@@ -70,11 +65,6 @@ export class MatchController {
     if (this.phase !== 'post') this.advance(dt);
     // FUEL that scores within GRACE of AUTO ending still counts for AUTO, so the SHIFT order is decided after it.
     if (this.firstInactive === null && this.autoEndAt !== null && (this.matchT - this.autoEndAt >= SCORING.graceSeconds || this.phase === 'shift')) this.decideFirstInactive();
-    for (const a of ['blue', 'red'] as const) {
-      const active = this.isHubActive(a);
-      if (this.wasActive[a] && !active) this.deactivatedAt[a] = this.matchT;
-      this.wasActive[a] = active;
-    }
   }
 
   private advance(dt: number) {
@@ -105,11 +95,12 @@ export class MatchController {
     }
   }
 
-  /** True while FUEL entering alliance `a`'s HUB scores: active, or within the grace window after deactivating. */
+  /** True while FUEL entering alliance `a`'s HUB scores. */
   hubCounts(a: Alliance): boolean {
     if (this.isHubActive(a)) return true;
-    const d = this.deactivatedAt[a];
-    return d !== null && this.matchT - d <= SCORING.graceSeconds;
+    // Only AUTO FUEL gets the manual's grace period while TELEOP is starting.
+    // A HUB that is inactive for a SHIFT must not score at all.
+    return this.inAutoScoring();
   }
 
   /** In the grace window after AUTO, scored FUEL is still AUTO FUEL. */

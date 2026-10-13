@@ -85,23 +85,19 @@ describe('MatchController', () => {
     expect(m.firstInactive).toBe('blue');
   });
 
-  it('a HUB keeps counting for 3 s after it goes inactive at a SHIFT change', () => {
+  it('a HUB does not score while inactive during a SHIFT', () => {
     const m = new MatchController({ autoTeleopGap: 0, rng: () => 0.1 });
     m.start();
     run(m, PERIODS.auto + PERIODS.transition + 1);
     const inactive = m.isHubActive('blue') ? 'red' : 'blue';
-    expect(m.scoreFuel(inactive)).toBe(1);
-    run(m, 2.5);
     expect(m.scoreFuel(inactive)).toBe(0);
   });
 
-  it('FUEL still scores for 3 s after the match ends', () => {
+  it('FUEL does not score after the match ends', () => {
     const m = new MatchController({ autoTeleopGap: 0 });
     m.start();
     run(m, PERIODS.auto + PERIODS.transition + PERIODS.shift * PERIODS.shiftCount + PERIODS.endgame + 1);
     expect(m.phase).toBe('post');
-    expect(m.scoreFuel('red')).toBe(1);
-    run(m, 2.5);
     expect(m.scoreFuel('red')).toBe(0);
   });
 

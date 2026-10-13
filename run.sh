@@ -11,12 +11,11 @@ if ! command -v pnpm >/dev/null 2>&1; then
   exit 1
 fi
 
-echo "Installing dependencies..."
-pnpm install --config.minimumReleaseAge=0
-
-echo "Building the app..."
-pnpm build
+if [ ! -x "node_modules/.bin/vite" ]; then
+  echo "Installing dependencies..."
+  pnpm install --config.minimumReleaseAge=0
+fi
 
 echo "Starting the app..."
 echo "Open the Local URL printed below, usually http://localhost:5173/"
-exec pnpm dev
+exec node_modules/.bin/vite --host 127.0.0.1
