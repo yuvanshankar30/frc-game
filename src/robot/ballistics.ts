@@ -88,18 +88,55 @@ export function entryAngle(speed: number, elev: number, h: number): number {
   return 0;
 }
 
+/** Height of the shot (relative to the exit) when it is `x` out horizontally, on the way up or down; null if short. */
+export function heightAtRange(speed: number, elev: number, x: number): number | null {
+  let px = 0;
+  let y = 0;
+  let vx = speed * Math.cos(elev);
+  let vy = speed * Math.sin(elev);
+  const k = K_DAMP(FUEL_AIR_DAMPING);
+  for (let i = 0; i < 600; i++) {
+    vy -= G * DT;
+    vx *= k;
+    vy *= k;
+    const nx = px + vx * DT;
+    const ny = y + vy * DT;
+    if (nx >= x) return y + ((ny - y) * (x - px)) / Math.max(1e-9, nx - px);
+    px = nx;
+    y = ny;
+  }
+  return null;
+}
+
+/** Ball center clearance (m) needed over the HUB's top frame relative to the aim height. */
+export const RIM_CLEARANCE = 0.07;
+
+/** The HUB's top frame along a shot: from where a ball first touches its outer edge to its inner edge (m from the
+ * target, horizontally). */
+export interface RimSpan {
+  outer: number;
+  inner: number;
+}
+
+/** Does a shot clear the HUB's top frame on its way to a target `d` away and `h` up? */
+export function clearsRim(speed: number, elev: number, d: number, h: number, rim: RimSpan | null) {
+  return !rim || [rim.outer, rim.inner].every((r) => r >= d || (heightAtRange(speed, elev, d - r) ?? -Infinity) >= h + RIM_CLEARANCE);
+}
+
 /** Steepest-enough entry for FUEL to drop cleanly through the HUB's opening. */
 export const MIN_ENTRY = (42 * Math.PI) / 180;
 
 /**
  * Choose launch elevation + speed for a target.
  * With a hood: the flattest angle (fastest, least drag-sensitive shot) whose descent into the
- * HUB is at least MIN_ENTRY, within the speed limits. With a fixed angle: just solve speed.
+ * HUB is at least MIN_ENTRY and that clears the HUB's top frame (`rim`; the frame is square, so it's farther out on a
+ * diagonal approach), within the speed limits. With a fixed angle: just solve speed.
  */
 export function solveShot(
   d: number,
   h: number,
   shooter: { angle: number; hoodMin: number | null; hoodMax: number | null; minSpeed: number; maxSpeed: number },
+  rim: RimSpan | null = null,
 ): ShotSolution {
   const DEG = Math.PI / 180;
   const candidates: number[] = [];
@@ -115,7 +152,7 @@ export function solveShot(
     const s = solveSpeed(d, h, elev, shooter.maxSpeed * 1.6);
     if (s === null) continue;
     const inLimits = s <= shooter.maxSpeed && s >= shooter.minSpeed * 0.8;
-    if (inLimits && (candidates.length === 1 || entryAngle(s, elev, h) >= MIN_ENTRY)) return { elev, speed: s, ok: true };
+    if (inLimits && (candidates.length === 1 || (entryAngle(s, elev, h) >= MIN_ENTRY && clearsRim(s, elev, d, h, rim)))) return { elev, speed: s, ok: true };
     if (inLimits && !fallback) fallback = { elev, speed: s, ok: true };
     if (!inLimits && (!fallback || !fallback.ok)) {
       const clamped = Math.min(Math.max(s, shooter.minSpeed), shooter.maxSpeed);

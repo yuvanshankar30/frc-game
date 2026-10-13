@@ -5,7 +5,7 @@ import { FIELD } from '../field/rebuilt/dims';
 import { Robot, idleCommand, type RobotCommand } from '../robot/Robot';
 import { loadRobot } from '../robots/registry';
 import { MatchController, type Phase } from '../game/MatchController';
-import { type Alliance, totalPoints, rankingPoints } from '../game/scoring';
+import { type Alliance, totalPoints, rankingPoints, emptyScore } from '../game/scoring';
 import { DriverInput, type DeviceSpec } from './input/Input';
 import { CameraRig } from '../render/cameras';
 import { createRenderer, createArena } from '../render/scene';
@@ -127,15 +127,13 @@ export class Game {
       r.preload(this.field.fuel, r.def.storage.preload);
     }
     this.match.phase = 'pre';
+    this.match.score = { blue: emptyScore(), red: emptyScore() };
     if (mode === 'practice') {
-      this.match.score = { blue: { ...emptyish() }, red: { ...emptyish() } };
       this.field.setHubActive('blue', true);
       this.field.setHubActive('red', true);
       this.showBanner('FREE PRACTICE', 2);
     } else {
-      // Pre-match: robots disabled for a 3-2-1 countdown, then the match starts with the "Charge!" cue.
-      this.match.phase = 'pre';
-      this.match.score = { blue: { ...emptyish() }, red: { ...emptyish() } };
+      // Pre-match: robots disabled for a 3-2-1 countdown, then the match starts with the field start sound.
       this.countdown = 3.2;
       this.lastCount = 4;
     }
@@ -215,7 +213,7 @@ export class Game {
 
   setPaused(p: boolean) {
     this.paused = p;
-    this.pushHud(true);
+    this.pushHud();
   }
 
   resetRobot(index = 0) {
@@ -248,7 +246,8 @@ export class Game {
       if (s.pressed.camera) p.rig.cycle();
       if (s.pressed.assist) p.assist = !p.assist;
       if (s.pressed.reset && !this.paused) this.placeRobot(p.robot);
-      if (s.pressed.feed && !this.paused) this.field.feedFromOutpost(p.robot.alliance);
+      // The human player only feeds while play is live (any time in practice).
+      if (s.pressed.feed && !this.paused && (this.config.mode === 'practice' || this.match.running)) this.field.feedFromOutpost(p.robot.alliance);
     });
 
     if (!this.paused) {
@@ -387,8 +386,7 @@ export class Game {
     return this.match.phase === 'pre' ? 0 : this.time - this.matchStart;
   }
 
-  private pushHud(force = false) {
-    void force;
+  private pushHud() {
     const info = this.match.info();
     const score = this.match.score;
     const hud: Hud = {
@@ -454,9 +452,5 @@ export class Game {
     }
     useStore.getState().setHud(null);
   }
-}
-
-function emptyish() {
-  return { autoFuel: 0, teleopFuel: 0, wastedFuel: 0, autoTower: 0, teleopTower: 0, foulPoints: 0 };
 }
 

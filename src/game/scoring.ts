@@ -2,7 +2,7 @@
 export const SCORING = {
   fuelActive: 1,
   fuelInactive: 0,
-  /** FUEL keeps being assessed this long after a HUB deactivates (and after AUTO / the match ends). */
+  /** FUEL entering a HUB this long after AUTO ends still scores as AUTO FUEL (shift changes / match end get none). */
   graceSeconds: 3,
   autoTowerL1: 15,
   autoTowerL1MaxRobots: 2,

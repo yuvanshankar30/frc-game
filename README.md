@@ -117,8 +117,9 @@ All dimensions live in `src/field/rebuilt/dims.ts`, and point values live in `sr
 
 Match flow follows the manual: a 3-2-1 countdown, then AUTO (20s, both HUBs active). Robots are disabled for the
 3s AUTO→TELEOP delay. TELEOP runs TRANSITION (10s), four 25s SHIFTs with alternating HUBs, and END GAME (30s).
-FUEL keeps scoring for 3s after a HUB deactivates and after AUTO or the match ends. The alliance that scored more
-AUTO FUEL, grace window included, starts SHIFT 1 inactive.
+FUEL entering a HUB within 3s after AUTO ends still scores as AUTO FUEL. A HUB that is inactive for a SHIFT, or
+after the match ends, scores nothing. The alliance that scored more AUTO FUEL, grace window included, starts SHIFT 1
+inactive.
 
 ## Sound
 
@@ -164,5 +165,6 @@ The browser tests need the dev server running on :5273 (or `URL=...`) and use yo
 | `node scripts/ingame-closeup.mjs <team> <dir>` | In-game shots with the intake deployed |
 | `node scripts/flow-test.mjs` | Countdown, AUTO-end disable, shooting while rotating, hopper spills, FUEL under the frame |
 | `node scripts/intake-test.mjs` | Driving through FUEL with the intake on vs off: speed, missed entries, spills |
+| `node scripts/fill-test.mjs` | Feeds every robot until its hopper is full: does it reach its capacity? |
 
 Not affiliated with FIRST® or MoSim.

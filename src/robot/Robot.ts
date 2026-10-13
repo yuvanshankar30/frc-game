@@ -3,11 +3,11 @@ import { RAPIER, type World, GROUP, groups, ALL, MATERIAL, ROBOT_DOMINANCE } fro
 import type { RobotDefinition } from './schema';
 import { assemble, stepJoint, jointProgress, type Assembly, type JointRT } from './assemble';
 import { desiredSpeeds, limitSpeeds, referenceToRobot, swerveModuleStates, type ChassisSpeeds } from './drivetrains/kinematics';
-import { solveShot, flightTime, type ShotSolution } from './ballistics';
+import { solveShot, solveSpeed, clearsRim, flightTime, type ShotSolution, type RimSpan } from './ballistics';
 import type { Field } from '../field/rebuilt/Field';
 import type { Alliance } from '../game/scoring';
 import { ALLIANCE_COLOR } from '../field/rebuilt/Field';
-import { TOWER, FUEL, FIELD } from '../field/rebuilt/dims';
+import { TOWER, FUEL, FIELD, HUB } from '../field/rebuilt/dims';
 import { DEG, clamp, wrapAngle, approach } from '../util/units';
 import { makeBumpers } from './bumpers';
 import type { FuelSystem } from '../field/fuel';
@@ -641,6 +641,9 @@ export class Robot {
     this.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
     this.speeds = { vx: 0, vz: 0, omega: 0 };
     this.holdYaw = yaw;
+    // A teleport isn't an acceleration: don't let the chassis sway spring see a velocity jump.
+    this.sway = { pitch: 0, roll: 0, vp: 0, vr: 0, bob: 0, lastVx: 0, lastVz: 0 };
+    this.moduleAngle = 0;
     if (this.fuel) {
       this.stored.forEach((i, k) => {
         const w = this.toWorld(carried[k], new THREE.Vector3());
@@ -686,6 +689,7 @@ export class Robot {
         assisted = true;
       }
     }
+    this.assistTurning = assisted;
     // Heading hold: when the driver isn't rotating, keep the current heading (resists bumps / pushes).
     const holonomic = d.type !== 'tank';
     if (ctx.headingHold && holonomic && !assisted && Math.abs(cmd.rot) < 0.02) {
@@ -748,6 +752,8 @@ export class Robot {
     this.body.applyTorqueImpulse({ x: 0, y: Iy * dw, z: 0 }, true);
   }
 
+  /** The aim assist (not the driver) is rotating the robot toward the HUB this step. */
+  private assistTurning = false;
   /** Robot-frame heading the swerve modules currently point (rad; a module driving backwards is the same). */
   private moduleAngle = 0;
   /** Visual chassis sway: pitch / roll (rad) and their rates, a spring driven by the robot's acceleration. */
@@ -834,7 +840,7 @@ export class Robot {
     this.clearUnderside(ctx.field.fuel);
 
     // Aim (turret + hood + speed).
-    const aim = def.shooter ? this.computeAim(ctx) : null;
+    const aim = def.shooter ? this.computeAim(ctx, dt) : null;
 
     // Joints.
     let deployProgress = 1;
@@ -988,9 +994,8 @@ export class Robot {
   private aimPoint = new THREE.Vector3(Number.NaN, 0, 0);
   private aimTimer = 0;
 
-  private computeAim(ctx: RobotContext): AimResult {
+  private computeAim(ctx: RobotContext, dt: number): AimResult {
     const sh = this.def.shooter!;
-    const dt = 1 / 120;
     this.aimTimer -= dt;
     if (!this.aimCache || this.aimTimer <= 0) {
       this.aimTimer = 1 / 30;
@@ -1014,6 +1019,7 @@ export class Robot {
     let dist = 0;
     let shared: ShotSolution | null = null;
     const hasTurret = sh.turretMin !== null && sh.turretMax !== null;
+    const lanes: { d: number; h: number; rim: RimSpan }[] = [];
     for (let b = 0; b < sh.barrels.length; b++) {
       const barrel = sh.barrels[b];
       // Desired turret yaw from the turret axis, then the exit point at that yaw.
@@ -1034,7 +1040,15 @@ export class Robot {
       // Lanes of a fixed drum share one solution (they are side by side); turrets solve individually.
       const solveThis: boolean = !shared || hasTurret;
       let d = Math.hypot(tx - exit.x, tz - exit.z);
-      let sol: ShotSolution = solveThis || !shared ? solveShot(d, ty - exit.y, sh) : shared;
+      // The HUB's square top frame along this approach (0.6 m out square-on, 0.85 m on a diagonal), padded by a ball
+      // radius on the outside where an incoming ball first touches it.
+      const rimAlong = (fromX: number, fromZ: number): RimSpan => {
+        const ux = Math.abs(fromX - hub.x);
+        const uz = Math.abs(fromZ - hub.z);
+        const k = Math.hypot(ux, uz) / Math.max(ux, uz, 1e-6);
+        return { outer: (HUB.footprint / 2) * k + FUEL.radius, inner: (HUB.footprint / 2 - HUB_RIM_WIDTH) * k };
+      };
+      let sol: ShotSolution = solveThis || !shared ? solveShot(d, ty - exit.y, sh, rimAlong(exit.x, exit.z)) : shared;
       if (solveThis && sh.sotm && ctx.assist) {
         // Lead the target by the robot's velocity × time of flight (two refinement passes).
         for (let k = 0; k < 2; k++) {
@@ -1045,16 +1059,33 @@ export class Robot {
           if (hasTurret) rel = clamp(relFor(tx, tz, pivotW), sh.turretMin! * DEG, sh.turretMax! * DEG);
           exit = exitAt(rel);
           d = Math.hypot(tx - exit.x, tz - exit.z);
-          sol = solveShot(d, ty - exit.y, sh);
+          sol = solveShot(d, ty - exit.y, sh, rimAlong(exit.x, exit.z));
         }
       }
       // Aim error of this barrel's shot direction vs the target (rad), for fire gating.
       const err = Math.abs(relFor(tx, tz, exit) - rel);
       results.push({ yaw: rel, elev: sol.elev, speed: sol.speed, ok: sol.ok, err });
+      lanes.push({ d, h: ty - exit.y, rim: rimAlong(exit.x, exit.z) });
       shared ??= sol;
       if (b === 0) this.aimPoint.set(tx, 0, tz);
       ok = ok && sol.ok;
       if (b === 0) dist = d;
+    }
+    // A fixed multi-lane drum shares one hood angle, solved for its first lane. Up close the outer lanes see the HUB's
+    // frame at a different distance and angle, so raise the hood until every lane clears it (each lane gets its own
+    // speed at that angle).
+    if (!hasTurret && results.length > 1 && sh.hoodMin !== null && sh.hoodMax !== null && results[0].ok) {
+      const top = Math.max(sh.hoodMin, sh.hoodMax) * DEG;
+      for (let elev = results[0].elev; elev <= top + 1e-6; elev += 3 * DEG) {
+        const speeds = lanes.map((l) => solveSpeed(l.d, l.h, elev, sh.maxSpeed));
+        if (speeds.every((v, k) => v !== null && clearsRim(v, elev, lanes[k].d, lanes[k].h, lanes[k].rim))) {
+          results.forEach((r, k) => {
+            r.elev = elev;
+            r.speed = Math.max(sh.minSpeed, speeds[k]!);
+          });
+          break;
+        }
+      }
     }
     this.aimOk = ok;
     this.aimDistance = dist;
@@ -1071,12 +1102,13 @@ export class Robot {
         if (Math.abs((this.turretYaw[b] ?? 0) - a.yaw) > tol) return false;
       }
     } else {
-      // Fixed shooter: fire once the heading (led for robot motion) points the shooter at the HUB and the robot has
-      // nearly stopped turning. Firing mid-swing flings the ball sideways with the spin of the chassis (a wide
-      // rear drum is ~0.4 m off-center: 4 m/s of sideways velocity at full rotation speed).
+      // Fixed shooter: fire whenever the heading (led for robot motion and spin) points the shooter at the HUB. While
+      // the assist is swinging the robot onto the target, wait until it has nearly stopped turning: firing mid-swing
+      // flings the ball sideways with the chassis spin (a wide rear drum is ~0.4 m off-center). A driver spinning the
+      // robot on purpose still gets shots as the shooter sweeps past the HUB.
       const e = this.robotAimError(ctx);
       if (e === null || Math.abs(e) > tol * 1.4) return false;
-      if (Math.abs(this.body.angvel().y) > 1.5) return false;
+      if (this.assistTurning && Math.abs(this.body.angvel().y) > 0.4) return false;
     }
     if (sh.hoodMin !== null && Math.abs(this.hoodAngle - aim.barrels[0].elev / DEG) > 4) return false;
     return true;
@@ -1165,12 +1197,9 @@ export class Robot {
     if (this.climb !== 'none') return;
     if (ctx.auto && !cl.canAutoClimb) return;
     const tower = ctx.field.towers[this.alliance];
-    // Line up with the rungs: bumper face just in front of the rung, facing the wall.
-    const dir = Math.sign(-tower.rungX); // toward the field from the rung
-    const standoff = this.halfLength + TOWER.rungDiameter / 2 + 0.02;
-    const pose = new THREE.Vector3(tower.rungX + dir * standoff, 0, tower.rungZ);
+    const pose = this.climbAlignPose(ctx.field);
     const p = this.position;
-    if (Math.hypot(p.x - pose.x, p.z - pose.z) > 1.6) return;
+    if (Math.hypot(p.x - pose.x, p.z - pose.z) > CLIMB_RANGE) return;
     this.climbTarget = ctx.auto ? 1 : cl.maxLevel;
     this.climbFrom.copy(p);
     this.climbFromYaw = this.yaw;
@@ -1243,14 +1272,19 @@ export class Robot {
     this.body.setNextKinematicRotation({ x: this.tmpQ.x, y: this.tmpQ.y, z: this.tmpQ.z, w: this.tmpQ.w });
   }
 
-  /** Is the robot within range of its TOWER to start a climb? */
+  /** Where a climb lines the robot up: bumper face just in front of its TOWER's rungs, facing the wall. */
+  private climbAlignPose(field: Field) {
+    const tower = field.towers[this.alliance];
+    const dir = Math.sign(-tower.rungX); // toward the field from the rung
+    return new THREE.Vector3(tower.rungX + dir * (this.halfLength + TOWER.rungDiameter / 2 + 0.02), 0, tower.rungZ);
+  }
+
+  /** Is the robot within range of its TOWER to start a climb? (Same test as toggleClimb.) */
   canClimbHere(field: Field) {
     if (!this.def.climber || this.def.climber.maxLevel <= 0 || this.climb !== 'none') return false;
-    const tower = field.towers[this.alliance];
-    const dir = Math.sign(-tower.rungX);
-    const px = tower.rungX + dir * (this.halfLength + 0.04);
+    const pose = this.climbAlignPose(field);
     const p = this.position;
-    return Math.hypot(p.x - px, p.z - tower.rungZ) <= 1.6;
+    return Math.hypot(p.x - pose.x, p.z - pose.z) <= CLIMB_RANGE;
   }
 
   // ---------------------------------------------------------------- render
@@ -1304,6 +1338,10 @@ interface AimResult {
 const ONE = new THREE.Vector3(1, 1, 1);
 /** Swerve module azimuth rate (rad/s): a quarter turn in ~0.1 s, like a Kraken-steered MK4/MK5 module. */
 const MODULE_STEER_RATE = 15;
+/** How close (m) to the TOWER alignment pose a robot must be to start its auto-aligned climb. */
+const CLIMB_RANGE = 1.6;
+/** Width of the HUB's top frame bars (matches the field model). */
+const HUB_RIM_WIDTH = 0.06;
 
 function smooth(t: number) {
   return t * t * (3 - 2 * t);
