@@ -77,11 +77,14 @@ function HudView({ hud, game, onQuit, onRestart }: { hud: Hud; game: Game | null
         <DriverPanel key={i} p={p} style={n === 1 ? { left: 14 } : { left: `calc(${(i * 100) / n}% + 14px)` }} outpost={hud.outpost[p.alliance]} />
       ))}
       {n === 1 && settings.minimap && hud.players[0] && <Minimap game={game} alliance={hud.players[0].alliance} />}
-      {n === 1 && hud.players[0]?.canClimb && hud.players[0].climbState === 'none' && (
-        <div className="climb-hint">
-          <kbd>{keyLabel(kb.actions.climb[0] ?? 'C')}</kbd> CLIMB
-        </div>
-      )}
+      {n === 1 && hud.players[0] && (() => {
+        const p = hud.players[0];
+        const key = <kbd>{keyLabel(kb.actions.climb[0] ?? 'C')}</kbd>;
+        if (p.canClimb && p.climbState === 'none') return <div className="climb-hint">{key} Climb to L1</div>;
+        if (p.climbState === 'hanging')
+          return <div className="climb-hint">{key} {p.climbLevel < p.maxClimb ? `Climb to L${p.climbLevel + 1}` : 'Lower to the carpet'}</div>;
+        return null;
+      })()}
       {n === 1 && <ControlsHelp kb={kb} />}
 
       {hud.paused && !hud.results && (

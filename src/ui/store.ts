@@ -68,8 +68,12 @@ export interface PlayerHud {
   capacity: number;
   climbLevel: number;
   climbState: string;
+  /** Highest LEVEL this robot can climb to right now (LEVEL 1 in AUTO). */
+  maxClimb: number;
   canClimb: boolean;
   aimOk: boolean;
+  /** Out of its ALLIANCE ZONE: the shooter lobs FUEL home instead of at the HUB. */
+  shuttling: boolean;
   distance: number;
   camera: CameraMode;
   assist: boolean;

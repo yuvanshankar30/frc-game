@@ -36,7 +36,7 @@ FUEL inside a robot is real physics. Each robot's hopper has walls that only car
 | Intake (hold) | `Shift` | LT / LB |
 | Shoot (hold) | `Space` | RT / RB |
 | Eject | `X` | B |
-| Climb / descend | `C` | Y |
+| Climb one level / lower | `C` | Y |
 | Human player feed | `F` | X |
 | Cycle camera | `V` | D-pad up |
 | Toggle aim assist | `T` | D-pad down |
@@ -44,9 +44,13 @@ FUEL inside a robot is real physics. Each robot's hopper has walls that only car
 | Reset robot | `R` | Back |
 | Pause | `Esc` / `P` | Start |
 
+Climbing goes one level per press: near your TOWER the first press lines up and climbs to LEVEL 1, each further press climbs to the next rung (up to what the robot can reach; LEVEL 1 only in AUTO), and a press at the top lowers the robot back to the carpet.
+
+Outside its ALLIANCE ZONE a robot shuttles: Shoot lobs FUEL back onto the carpet in its own zone (the HUD shows PASS instead of LOCKED).
+
 Settings has a keyboard rotation ramp and heading hold, which keeps swerve and mecanum robots on line when you aren't turning. **Expert mode** turns off aim assist and heading hold: you rev the flywheel yourself and Shoot only runs the indexer, so FUEL fed into a wheel that isn't up to speed falls short. Player 2 on the same keyboard drives with the arrow keys and rotates with `,` and `.`.
 
-Cameras: third person, driver station, first person and overhead. In third person, controls follow the camera by default: the direction is captured when you start moving and held until you let go, so the camera swinging around behind the robot doesn't bend your path. Switch to driver-station field-oriented in Settings.
+Cameras: third person, driver station, first person and overhead. The third-person camera follows the robot from its alliance's side of the field and doesn't swing around when the robot turns, so up on the stick is always the same direction on screen (like MoSim's and xRC's follow cameras). Driving is field-oriented in every camera except first person.
 
 Each finished match is saved to a local high score table (top 10, on this computer) shown on the results screen.
 

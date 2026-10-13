@@ -27,12 +27,25 @@ class KeyboardState {
     this.attached = true;
     window.addEventListener('keydown', (e) => {
       if (isTyping(e)) return;
+      // With ⌘ held, macOS never sends keyup for the other keys, so they'd stay "down" forever and the robot would
+      // keep driving on its own. Shortcuts aren't driving input: ignore them.
+      if (e.metaKey || e.code.startsWith('Meta')) {
+        this.down.clear();
+        return;
+      }
       this.down.add(e.code);
       if (!e.repeat) this.presses.set(e.code, (this.presses.get(e.code) ?? 0) + 1);
       if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab'].includes(e.code)) e.preventDefault();
     });
-    window.addEventListener('keyup', (e) => this.down.delete(e.code));
-    window.addEventListener('blur', () => this.down.clear());
+    window.addEventListener('keyup', (e) => {
+      this.down.delete(e.code);
+      if (e.code.startsWith('Meta')) this.down.clear();
+    });
+    // Any way focus can leave the page drops held keys (their keyups go elsewhere).
+    const clear = () => this.down.clear();
+    window.addEventListener('blur', clear);
+    document.addEventListener('visibilitychange', clear);
+    window.addEventListener('contextmenu', clear);
   }
 
   pressCount(codes: string[]) {
@@ -80,13 +93,16 @@ export class DriverInput {
       const pad = navigator.getGamepads?.()[d.index];
       if (pad) {
         const dz = d.bindings.deadzone;
-        const ax = (i: number) => {
-          const v = pad.axes[i] ?? 0;
-          return Math.abs(v) < dz ? 0 : (v - Math.sign(v) * dz) / (1 - dz);
-        };
-        x = -ax(1);
-        z = ax(0);
-        rot = -ax(2);
+        // Radial deadzone on the drive stick: a per-axis (square) one snaps diagonals and lets a slightly
+        // off-center stick creep sideways. Rescaled so motion starts smoothly at the edge of the deadzone.
+        const sx = pad.axes[0] ?? 0;
+        const sy = pad.axes[1] ?? 0;
+        const mag = Math.min(1, Math.hypot(sx, sy));
+        const k = mag < dz ? 0 : (mag - dz) / (1 - dz) / mag;
+        x = -sy * k;
+        z = sx * k;
+        const r = pad.axes[2] ?? 0;
+        rot = Math.abs(r) < dz ? 0 : -(r - Math.sign(r) * dz) / (1 - dz);
         for (const a of ACTIONS) held[a] = d.bindings.actions[a].some((b) => (pad.buttons[b]?.value ?? 0) > 0.4);
       }
     }

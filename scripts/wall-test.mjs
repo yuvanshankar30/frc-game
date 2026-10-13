@@ -55,13 +55,14 @@ for (const t of ids) {
     for (let k = 0; k < 240; k++) g.stepSim([{ ...idle(), z: 0.6, x: k % 120 < 60 ? 1 : -1, rot: 0.6 }], 1 / 120);
     for (let k = 0; k < 120; k++) g.stepSim([idle()], 1 / 120);
     const f = g.field.fuel;
-    let outside = 0;
+    // Through the wall (below the guardrail top, past its face) is a bug; popped over the top is legal play.
+    let through = 0;
     for (let i = 0; i < f.capacity; i++) {
       if (f.state[i] !== 'field') continue;
       const p = f.position(i);
-      if (Math.abs(p.z) > HW + 0.02 || p.y < -0.2) outside++;
+      if ((Math.abs(p.z) > HW + 0.02 && p.y < 0.5) || p.y < -0.2) through++;
     }
-    out.fuelOut = outside;
+    out.fuelThrough = through;
     return out;
   });
   rows.push({ robot: t, ...r });

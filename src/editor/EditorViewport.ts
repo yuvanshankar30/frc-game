@@ -127,7 +127,7 @@ export class EditorViewport {
       clone.traverse((o) => {
         if ((o as THREE.Mesh).isMesh) o.userData.pickable = true;
       });
-      this.asm = assemble(def, clone);
+      this.asm = assemble(def, clone, false);
       this.robotRoot.add(this.asm.root);
       for (const [id, v] of this.previewValues) {
         const jt = this.asm.joints.get(id);

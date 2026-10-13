@@ -38,8 +38,8 @@ export class CameraRig {
 
   /**
    * Yaw of "forward" for the driver's controls. In the chase camera the frame is captured when the driver starts
-   * moving and held until they let go: the camera keeps swinging around behind the robot, and if the controls
-   * followed it mid-move, a straight stick would curve (the "drift" in issue #4).
+   * moving and held until they let go: if the camera is still swinging into place (after a camera switch), a straight
+   * stick would otherwise curve (the "drift" in issue #4).
    */
   referenceYaw(robot: Robot, driveFrame: 'camera' | 'driver-station', translating = false): number {
     const dsYaw = this.alliance === 'blue' ? 0 : Math.PI;
@@ -81,9 +81,12 @@ export class CameraRig {
     const sign = this.alliance === 'blue' ? -1 : 1;
     switch (this.mode) {
       case 'chase': {
-        // Trail behind the robot's heading, slowly.
+        // Follow the robot from its alliance's side of the field. The view doesn't swing round when the robot turns
+        // (a swerve robot's heading has nothing to do with where it's driving), so stick directions on screen stay
+        // put, as in MoSim / xRC-style follow cameras.
         const k = 1 - Math.exp(-dt * 2.2);
-        let d = yaw - this.chaseYaw;
+        const fieldYaw = this.alliance === 'blue' ? 0 : Math.PI;
+        let d = fieldYaw - this.chaseYaw;
         d = Math.atan2(Math.sin(d), Math.cos(d));
         this.chaseYaw += snap ? d : d * k;
         const back = new THREE.Vector3(-Math.cos(this.chaseYaw), 0, Math.sin(this.chaseYaw));

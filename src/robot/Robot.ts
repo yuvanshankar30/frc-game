@@ -10,7 +10,6 @@ import { ALLIANCE_COLOR } from '../field/rebuilt/Field';
 import { TOWER, FUEL, FIELD, HUB } from '../field/rebuilt/dims';
 import { DEG, clamp, wrapAngle, approach } from '../util/units';
 import { makeBumpers } from './bumpers';
-import { mergeStatic } from '../cad/optimize';
 import type { FuelSystem } from '../field/fuel';
 
 export interface RobotCommand {
@@ -82,6 +81,8 @@ export class Robot {
   /** TOWER level currently achieved (0 if not hanging). */
   climbLevel = 0;
   private climbTarget = 0;
+  /** Lift (m) the current climb step starts from (0 from the carpet, the previous level's lift when stepping up). */
+  private climbFromLift = 0;
   private climbT = 0;
   private climbFrom = new THREE.Vector3();
   private climbFromYaw = 0;
@@ -131,11 +132,6 @@ export class Robot {
     this.halfWidth = f.width / 2 + f.bumperThickness;
 
     this.assembly = assemble(def, model);
-    // Imported CAD can be thousands of parts: bake everything that moves together into a few meshes.
-    if (def.source === 'package') {
-      const a = this.assembly;
-      mergeStatic([a.chassis, ...[...a.joints.values()].map((j) => j.motion)], (o) => o.name.startsWith('joint:'));
-    }
     this.visual.add(this.assembly.root);
     this.visual.add(makeBumpers(def, ALLIANCE_COLOR[alliance], label));
     this.visual.traverse((o) => {
@@ -662,7 +658,6 @@ export class Robot {
     this.holdYaw = yaw;
     // A teleport isn't an acceleration: don't let the chassis sway spring see a velocity jump.
     this.sway = { pitch: 0, roll: 0, vp: 0, vr: 0, bob: 0 };
-    this.moduleAngle = 0;
     if (this.fuel) {
       this.stored.forEach((i, k) => {
         const w = this.toWorld(carried[k], new THREE.Vector3());
@@ -737,49 +732,44 @@ export class Robot {
       }
     }
 
-    // Measure current robot-relative velocity (post-collision) and accelerate toward target.
+    // Measure current robot-relative velocity (post-collision).
     const lv = this.body.linvel();
     const cur = referenceToRobot(lv.x, lv.z, heading);
     const av = this.body.angvel();
     const current: ChassisSpeeds = { vx: cur.vx, vz: cur.vz, omega: av.y };
-    const next = limitSpeeds(current, target, limits, dt);
-    // Tank / mecanum wheels resist sideways sliding (scrub).
-    if (d.type === 'tank') next.vz = approach(current.vz, 0, 30 * dt);
-    this.speeds = next;
 
     // Traction model: the wheels can only apply as much force as friction on their normal load
     // allows (μ·m·g shared by grounded wheels) and as much as the motors make, which fades with speed.
     const grounded = this.groundedWheels();
     this.grounded = grounded;
     this.driveAccel.x = this.driveAccel.z = 0;
-    if (grounded === 0) return;
     const m = this.def.frame.mass;
     const MU = 1.15; // treaded wheels on carpet
     const share = grounded / this.wheelPositions.length;
     const speed = Math.hypot(cur.vx, cur.vz);
-    const motor = d.maxAccel * Math.max(0.2, 1 - speed / (d.maxSpeed * 1.15));
-    let aMax = Math.min(MU * 9.81, motor) * share;
-    // Swerve modules have to steer before they can push in a new direction: they turn at a finite rate (either
-    // way round, since a module can drive backwards) and grip in the new direction ramps in as they line up.
-    if (d.type === 'swerve' && Math.hypot(next.vx, next.vz) > 0.15) {
-      const want = Math.atan2(next.vz, next.vx);
-      let err = wrapAngle(want - this.moduleAngle);
-      if (err > Math.PI / 2) err -= Math.PI;
-      else if (err < -Math.PI / 2) err += Math.PI;
-      this.moduleAngle = wrapAngle(this.moduleAngle + clamp(err, -MODULE_STEER_RATE * dt, MODULE_STEER_RATE * dt));
-      aMax *= Math.max(0.2, Math.cos(err));
-    }
+    // Drive motors are current-limited: full acceleration until ~60% of top speed, then torque falls off toward free
+    // speed (back-EMF). Braking (pushing against the motion) always gets the full current limit.
+    const speedingUp = cur.vx * target.vx + cur.vz * target.vz >= 0 && Math.hypot(target.vx, target.vz) > speed;
+    // Braking and changing direction are limited by tire grip, not the motor curve, so they bite hard: the robot
+    // stops sliding the old way quickly and heads where the stick points.
+    const motor = speedingUp ? d.maxAccel * clamp((1.12 - speed / d.maxSpeed) / 0.52, 0.25, 1) : Infinity;
+    const aMax = Math.min(MU * 9.81, motor) * share;
+    // One straight-line velocity change toward the target (the fastest way there): the robot starts moving toward the
+    // pressed direction immediately.
+    const next = limitSpeeds(current, target, { ...limits, maxAccel: aMax }, dt);
+    // Tank / mecanum wheels resist sideways sliding (scrub).
+    if (d.type === 'tank') next.vz = approach(current.vz, 0, 30 * dt);
+    this.speeds = next;
+    if (grounded === 0) return;
     const c = Math.cos(heading);
     const s = Math.sin(heading);
     const dvx = next.vx - cur.vx;
     const dvz = next.vz - cur.vz;
-    const dv = Math.hypot(dvx, dvz);
-    const k = dv > aMax * dt ? (aMax * dt) / dv : 1;
-    this.driveAccel.x = (dvx * k) / dt;
-    this.driveAccel.z = (dvz * k) / dt;
+    this.driveAccel.x = dvx / dt;
+    this.driveAccel.z = dvz / dt;
     // Robot-frame Δv → world impulse.
-    const ix = (dvx * c + dvz * s) * k * m;
-    const iz = (-dvx * s + dvz * c) * k * m;
+    const ix = (dvx * c + dvz * s) * m;
+    const iz = (-dvx * s + dvz * c) * m;
     this.body.applyImpulse({ x: ix, y: 0, z: iz }, true);
     // Yaw: torque limited by friction at the wheel radius from center.
     const Iy = (m * (this.def.frame.length ** 2 + this.def.frame.width ** 2)) / 12;
@@ -791,12 +781,11 @@ export class Robot {
 
   /** The aim assist (not the driver) is rotating the robot toward the HUB this step. */
   private assistTurning = false;
-  /** Robot-frame heading the swerve modules currently point (rad; a module driving backwards is the same). */
-  private moduleAngle = 0;
   /** Visual chassis sway: pitch / roll (rad) and their rates, a spring driven by the drivetrain's acceleration. */
   private sway = { pitch: 0, roll: 0, vp: 0, vr: 0, bob: 0 };
   /** Robot-frame acceleration the wheels applied this step (m/s²), which is what rocks the chassis on its tires. */
   private driveAccel = { x: 0, z: 0 };
+  private swayT = 0;
 
   /**
    * The chassis rocks on its tires: it squats back under acceleration, dips its nose braking and leans out in turns;
@@ -811,18 +800,20 @@ export class Robot {
     // Centripetal acceleration in turns leans the chassis out too.
     const ax = this.driveAccel.x;
     const az = this.driveAccel.z - v.vx * this.body.angvel().y;
-    const K = 0.0016; // rad per m/s² of acceleration
-    const OMEGA = 22;
-    const ZETA = 0.32;
+    const K = 0.0011; // rad per m/s² of acceleration
+    const OMEGA = 16;
+    const ZETA = 0.75; // a stiff, well-damped chassis: it settles instead of bobbing
     const speed = Math.hypot(v.vx, v.vz);
     const rumble = this.grounded > 0 ? Math.min(1, speed / Math.max(1, this.def.drivetrain.maxSpeed)) : 0;
-    const tp = clamp(ax * K, -0.05, 0.05) + (Math.random() - 0.5) * 0.006 * rumble;
-    const tr = clamp(-az * K, -0.05, 0.05) + (Math.random() - 0.5) * 0.006 * rumble;
+    // Carpet texture: a smooth low-frequency wobble with speed (not per-step noise, which reads as jitter).
+    this.swayT += dt * (6 + speed * 3);
+    const tp = clamp(ax * K, -0.035, 0.035) + Math.sin(this.swayT * 1.7) * 0.0012 * rumble;
+    const tr = clamp(-az * K, -0.035, 0.035) + Math.sin(this.swayT * 2.3 + 1) * 0.0012 * rumble;
     w.vp += (OMEGA * OMEGA * (tp - w.pitch) - 2 * ZETA * OMEGA * w.vp) * dt;
     w.vr += (OMEGA * OMEGA * (tr - w.roll) - 2 * ZETA * OMEGA * w.vr) * dt;
     w.pitch += w.vp * dt;
     w.roll += w.vr * dt;
-    w.bob = (Math.random() - 0.5) * 0.002 * rumble;
+    w.bob = Math.sin(this.swayT * 3.1) * 0.0008 * rumble;
   }
 
   /** Number of wheels touching something (field or another robot) below them. */
@@ -846,9 +837,9 @@ export class Robot {
   private robotAimError(ctx: RobotContext): number | null {
     const sh = this.def.shooter;
     if (!sh) return null;
-    const hub = ctx.field.hubs[this.alliance].target;
+    const hub = this.shotTarget(ctx);
     const p = this.position;
-    // Aim at the led point when shooting on the move, otherwise straight at the HUB.
+    // Aim at the led point when shooting on the move, otherwise straight at the target.
     const tx = sh.sotm && Number.isFinite(this.aimPoint.x) ? this.aimPoint.x : hub.x;
     const tz = sh.sotm && Number.isFinite(this.aimPoint.x) ? this.aimPoint.z : hub.z;
     const desired = Math.atan2(-(tz - p.z), tx - p.x);
@@ -1052,23 +1043,42 @@ export class Robot {
     return this.aimCache;
   }
 
+  /**
+   * Where the shooter aims. In (or just past) its own ALLIANCE ZONE that's its HUB. Out in the NEUTRAL ZONE or deeper
+   * it shuttles instead: FUEL is lobbed back onto the carpet in its own ALLIANCE ZONE, beside the HUB, for later.
+   */
+  shotTarget(ctx: RobotContext): { x: number; y: number; z: number; shuttle: boolean } {
+    const hub = ctx.field.hubs[this.alliance].target;
+    const side = hub.x < 0 ? -1 : 1;
+    const p = this.body.translation();
+    const zoneEdge = side * (FIELD.length / 2 - FIELD.allianceZoneDepth);
+    // Shuttle once the robot's center is past the ALLIANCE ZONE line by more than half a robot.
+    if ((p.x - zoneEdge) * -side < 0.5) return { x: hub.x, y: hub.y, z: hub.z, shuttle: false };
+    const z = clamp(p.z, -FIELD.width / 2 + 1.2, FIELD.width / 2 - 1.2);
+    return { x: side * (FIELD.length / 2 - FIELD.allianceZoneDepth * 0.45), y: FUEL.radius, z: Math.abs(z) < 1.4 ? Math.sign(z || 1) * 1.4 : z, shuttle: true };
+  }
+
+  /** True while the shooter is set up to shuttle FUEL home instead of scoring. */
+  shuttling = false;
+
   private solveAim(ctx: RobotContext): AimResult {
     const sh = this.def.shooter!;
-    const hub = ctx.field.hubs[this.alliance].target;
+    const hub = this.shotTarget(ctx);
+    this.shuttling = hub.shuttle;
     const yaw = this.yaw;
     const results: BarrelAim[] = [];
     let ok = true;
     let dist = 0;
     let shared: ShotSolution | null = null;
     const hasTurret = sh.turretMin !== null && sh.turretMax !== null;
-    const lanes: { d: number; h: number; rim: RimSpan }[] = [];
+    const lanes: { d: number; h: number; rim: RimSpan | null }[] = [];
     for (let b = 0; b < sh.barrels.length; b++) {
       const barrel = sh.barrels[b];
       // Desired turret yaw from the turret axis, then the exit point at that yaw.
       const pivotW = this.toWorld({ x: barrel.pivot[0], y: barrel.exit[1], z: barrel.pivot[2] }, new THREE.Vector3());
       let tx = hub.x;
       let tz = hub.z;
-      const ty = hub.y + 0.05;
+      const ty = hub.shuttle ? hub.y : hub.y + 0.05;
       const relFor = (x: number, z: number, from: THREE.Vector3) => wrapAngle(Math.atan2(-(z - from.z), x - from.x) - (yaw + sh.yawOffset * DEG));
       let rel = hasTurret && ctx.assist ? clamp(relFor(tx, tz, pivotW), sh.turretMin! * DEG, sh.turretMax! * DEG) : 0;
       const exitAt = (r: number) => {
@@ -1084,7 +1094,8 @@ export class Robot {
       let d = Math.hypot(tx - exit.x, tz - exit.z);
       // The HUB's square top frame along this approach (0.6 m out square-on, 0.85 m on a diagonal), padded by a ball
       // radius on the outside where an incoming ball first touches it.
-      const rimAlong = (fromX: number, fromZ: number): RimSpan => {
+      const rimAlong = (fromX: number, fromZ: number): RimSpan | null => {
+        if (hub.shuttle) return null;
         const ux = Math.abs(fromX - hub.x);
         const uz = Math.abs(fromZ - hub.z);
         const k = Math.hypot(ux, uz) / Math.max(ux, uz, 1e-6);
@@ -1234,9 +1245,22 @@ export class Robot {
 
   // ---------------------------------------------------------------- climb
 
+  /**
+   * Climb one level per press: the first press aligns and climbs to LEVEL 1, each further press climbs one rung
+   * higher (up to the robot's max; AUTO allows LEVEL 1 only), and a press at the top, or mid-climb, lowers it back
+   * down.
+   */
   private toggleClimb(ctx: RobotContext) {
     const cl = this.def.climber;
     if (!cl || cl.maxLevel <= 0) return;
+    const top = ctx.auto ? 1 : cl.maxLevel;
+    if (this.climb === 'hanging' && this.climbLevel < top) {
+      this.climbFromLift = levelLift(this.climbLevel, this.def.frame.bumperBottom);
+      this.climbTarget = this.climbLevel + 1;
+      this.climb = 'lifting';
+      this.climbT = 0;
+      return;
+    }
     if (this.climb === 'hanging' || this.climb === 'lifting' || this.climb === 'aligning') {
       this.climb = 'lowering';
       this.climbT = 0;
@@ -1248,7 +1272,8 @@ export class Robot {
     const pose = this.climbAlignPose(ctx.field);
     const p = this.position;
     if (Math.hypot(p.x - pose.x, p.z - pose.z) > CLIMB_RANGE) return;
-    this.climbTarget = ctx.auto ? 1 : cl.maxLevel;
+    this.climbTarget = 1;
+    this.climbFromLift = 0;
     this.climbFrom.copy(p);
     this.climbFromYaw = this.yaw;
     this.climbPose.copy(pose);
@@ -1271,7 +1296,8 @@ export class Robot {
     const bb = this.def.frame.bumperBottom;
     const maxLift = levelLift(cl.maxLevel, bb);
     const lift = levelLift(this.climbTarget, bb);
-    const liftTime = Math.max(0.6, (cl.climbTime * lift) / Math.max(maxLift, 0.01));
+    // climbTime covers the whole climb to the max level; each step takes its share of the height.
+    const liftTime = Math.max(0.6, (cl.climbTime * (lift - this.climbFromLift)) / Math.max(maxLift, 0.01));
     const ALIGN = 0.7;
     this.climbT += dt;
     let y = 0;
@@ -1290,7 +1316,7 @@ export class Robot {
       }
     } else if (this.climb === 'lifting') {
       const t = smooth(Math.min(1, this.climbT / liftTime));
-      y = lift * t;
+      y = this.climbFromLift + (lift - this.climbFromLift) * t;
       if (this.climbT >= liftTime) {
         this.climb = 'hanging';
         this.climbLevel = this.climbTarget;
@@ -1384,8 +1410,6 @@ interface AimResult {
 }
 
 const ONE = new THREE.Vector3(1, 1, 1);
-/** Swerve module azimuth rate (rad/s): a quarter turn in ~0.1 s, like a Kraken-steered MK4/MK5 module. */
-const MODULE_STEER_RATE = 15;
 /** How close (m) to the TOWER alignment pose a robot must be to start its auto-aligned climb. */
 const CLIMB_RANGE = 1.6;
 /** Width of the HUB's top frame bars (matches the field model). */

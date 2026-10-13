@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { JointDef, RobotDefinition } from './schema';
 import { DEG } from '../util/units';
+import { mergeStatic } from '../cad/optimize';
 
 export interface JointRT {
   def: JointDef;
@@ -44,8 +45,12 @@ export function sortJoints(joints: JointDef[]): JointDef[] {
 /**
  * Build the articulated robot visual from a model and a definition.
  * The model's pose as imported is joint value 0 for every joint.
+ *
+ * `merge`: bake everything that moves together into one mesh per material. Imported CAD can be tens of thousands of
+ * parts (a draw call each); the game, previews and thumbnails don't need them separate. The editor does (it picks
+ * parts), so it passes false.
  */
-export function assemble(def: RobotDefinition, model: THREE.Object3D): Assembly {
+export function assemble(def: RobotDefinition, model: THREE.Object3D, merge = def.source === 'package'): Assembly {
   const root = new THREE.Group();
   root.name = `robot:${def.id}`;
   const chassis = new THREE.Group();
@@ -97,6 +102,8 @@ export function assemble(def: RobotDefinition, model: THREE.Object3D): Assembly 
     jt.motion.attach(node); // preserves the world transform
   }
   for (const p of def.parts) if (nodes.has(p.node)) found.add(p.node);
+
+  if (merge) mergeStatic([chassis, ...[...joints.values()].map((j) => j.motion)], (o) => o.name.startsWith('joint:'));
 
   // Start every joint at its stowed value.
   for (const jt of joints.values()) {

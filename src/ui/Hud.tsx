@@ -134,7 +134,7 @@ export function DriverPanel({ p, style, outpost }: { p: PlayerHud; style: React.
         </span>
         <Light on={p.intaking > 0.5} label="INTAKE" />
         <Light on={p.spin > 0.85} label="FLYWHEEL" />
-        <Light on={p.ready} label="LOCKED" good />
+        <Light on={p.ready} label={p.shuttling ? 'PASS' : 'LOCKED'} good />
         <Light on={p.assist} label="ASSIST" />
         <Light on={p.climbState !== 'none'} label={p.climbLevel ? `L${p.climbLevel}` : 'CLIMB'} good={p.climbLevel > 0} />
         <span className="dp-hp">HP {outpost}</span>
