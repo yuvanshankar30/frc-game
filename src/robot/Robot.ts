@@ -71,6 +71,17 @@ export class Robot {
   readonly visual = new THREE.Group();
   readonly assembly: Assembly;
   readonly stored: number[] = [];
+  /**
+   * FUEL carried beyond what the drawn hopper box physically holds. The capacity set for the robot is what counts
+   * (issue #10): once the box is packed, more balls are carried out of sight, and they're shot first so the visible
+   * pile stays full until they're gone.
+   */
+  readonly overflow: number[] = [];
+
+  /** All FUEL on board: the physical pile plus any overflow. */
+  get carried() {
+    return this.stored.length + this.overflow.length;
+  }
   readonly stats: RobotStats = { shots: 0, scored: 0, intaked: 0 };
   speeds: ChassisSpeeds = { vx: 0, vz: 0, omega: 0 };
   climb: ClimbState = 'none';
@@ -303,7 +314,15 @@ export class Robot {
       const local = this.toLocal(from);
       // The intake throws each ball over the pile onto the lowest spot, so the hopper fills back to front and
       // all the way up instead of jamming at the entry wall.
-      const target = this.fillTarget(fuel, local.z) ?? this.entryPoint(local.z);
+      const spot = this.fillTarget(fuel, local.z);
+      if (!spot && this.packed(fuel)) {
+        // Packed to the roof but under capacity: carried out of sight.
+        fuel.hold(i, 'carried');
+        this.overflow.push(i);
+        return;
+      }
+      // No spot with clean headroom, but the pile still squeezes a ball into the gaps under its top layer.
+      const target = spot ?? this.entryPoint(local.z);
       const tw = this.toWorld(target, new THREE.Vector3());
       const T = 0.22;
       const v = new THREE.Vector3((tw.x - from.x) / T + lv.x, (tw.y - from.y) / T + 0.5 * 9.81 * T, (tw.z - from.z) / T + lv.z);
@@ -384,6 +403,17 @@ export class Robot {
     return p;
   }
 
+  /**
+   * True when the hopper is physically packed: even the lowest resting spot is level with the roof. Below that the pile
+   * still squeezes a new ball into the gaps under its top layer (being stricter caps hoppers at ~80% of what fits).
+   */
+  private packed(fuel: FuelSystem) {
+    const { rest, ceiling } = this.restSpots(fuel);
+    let low = Infinity;
+    for (const h of rest) low = Math.min(low, h);
+    return low > ceiling;
+  }
+
   /** Fill the hopper with `n` balls packed on its floor (preloads / refills). */
   preload(fuel: FuelSystem, n: number) {
     const { center: c, size: s } = this.hopper;
@@ -408,6 +438,7 @@ export class Robot {
 
   /** Remove the stored ball closest to a robot-frame point (e.g. a shooter's feeder). */
   private takeStored(fuel: FuelSystem, near: THREE.Vector3Like): number {
+    if (this.overflow.length) return this.overflow.pop()!;
     const w = this.toWorld(near, new THREE.Vector3());
     let best = -1;
     let bestD = Infinity;
@@ -434,6 +465,7 @@ export class Robot {
   /** Forget everything carried (the field re-stages FUEL on reset). */
   clearHopper() {
     this.stored.length = 0;
+    this.overflow.length = 0;
     this.entering.clear();
     this.enterTarget.clear();
   }
@@ -598,21 +630,6 @@ export class Robot {
     }
   }
 
-  private entryCheckT = 0;
-  private entryBlockedCache = false;
-  /** True when the hopper is physically packed to the roof (checked a few times a second). */
-  private entryBlocked(fuel: FuelSystem) {
-    if (--this.entryCheckT > 0) return this.entryBlockedCache;
-    this.entryCheckT = 6;
-    const { rest, ceiling } = this.restSpots(fuel);
-    let low = Infinity;
-    for (const h of rest) low = Math.min(low, h);
-    // Only when even the lowest spot is level with the roof: below that, the pile still squeezes a new ball into
-    // the gaps underneath its top layer (being strict here capped hoppers at ~80% of their real capacity).
-    this.entryBlockedCache = low > ceiling;
-    return this.entryBlockedCache;
-  }
-
   /** World → robot frame. */
   toLocal(p: THREE.Vector3Like, out = new THREE.Vector3()) {
     const t = this.body.translation();
@@ -698,14 +715,24 @@ export class Robot {
 
     // Aim assist for fixed shooters (and turrets at their limit): rotate the robot toward the HUB.
     let assisted = false;
-    if (ctx.assist && cmd.shoot && this.def.shooter && this.stored.length > 0) {
+    if (ctx.assist && cmd.shoot && this.def.shooter && this.carried > 0) {
       const err = this.robotAimError(ctx);
       if (err !== null && Math.abs(cmd.rot) < 0.2) {
-        target.omega = clamp(err * 8, -limits.maxOmega, limits.maxOmega);
+        // Time-optimal turn: the fastest rate it can still brake from in the angle left (√(2·α·θ)), blended to a
+        // proportional term near the target, so it swings onto the HUB and stops there instead of rocking past it.
+        const alpha = limits.maxAlpha * 0.8;
+        // Near 180° the shortest way round flips sign every step as the error wraps; commit to one direction until the
+        // turn is well under way.
+        let e = err;
+        if (Math.abs(e) > 2.4 && this.assistDir !== 0 && Math.sign(e) !== this.assistDir) e += this.assistDir * 2 * Math.PI;
+        this.assistDir = Math.sign(e) || 1;
+        const brake = Math.sqrt(2 * alpha * Math.abs(e));
+        target.omega = Math.sign(e) * Math.min(limits.maxOmega, brake, Math.abs(e) * 6);
         assisted = true;
       }
     }
     this.assistTurning = assisted;
+    if (!assisted) this.assistDir = 0;
     // Heading hold: when the driver isn't rotating, keep the current heading (resists bumps / pushes).
     const holonomic = d.type !== 'tank';
     if (ctx.headingHold && holonomic && !assisted && Math.abs(cmd.rot) < 0.02) {
@@ -753,7 +780,10 @@ export class Robot {
     // Braking and changing direction are limited by tire grip, not the motor curve, so they bite hard: the robot
     // stops sliding the old way quickly and heads where the stick points.
     const motor = speedingUp ? d.maxAccel * clamp((1.12 - speed / d.maxSpeed) / 0.52, 0.25, 1) : Infinity;
-    const aMax = Math.min(MU * 9.81, motor) * share;
+    let aMax = Math.min(MU * 9.81, motor) * share;
+    // Holding still, the wheels only resist gently at low speed, so contacts can slide the robot a little (rotating
+    // in place beside a wall, its corners have to push off it instead of jamming the turn).
+    if (Math.hypot(target.vx, target.vz) < 0.05 && speed < 0.5) aMax = Math.min(aMax, 3);
     // One straight-line velocity change toward the target (the fastest way there): the robot starts moving toward the
     // pressed direction immediately.
     const next = limitSpeeds(current, target, { ...limits, maxAccel: aMax }, dt);
@@ -781,6 +811,8 @@ export class Robot {
 
   /** The aim assist (not the driver) is rotating the robot toward the HUB this step. */
   private assistTurning = false;
+  /** Direction the aim assist committed to turning (±1, 0 = none yet). */
+  private assistDir = 0;
   /** Visual chassis sway: pitch / roll (rad) and their rates, a spring driven by the drivetrain's acceleration. */
   private sway = { pitch: 0, roll: 0, vp: 0, vr: 0, bob: 0 };
   /** Robot-frame acceleration the wheels applied this step (m/s²), which is what rocks the chassis on its tires. */
@@ -889,7 +921,7 @@ export class Robot {
     }
     if (def.shooter && canAct && cmd.shoot && aim) this.runShooter(ctx, aim, dt);
     else this.shotReady = false;
-    this.feeding = canAct && !!def.shooter && cmd.shoot && (ctx.expert || this.spin > 0.8) && this.stored.length > 0;
+    this.feeding = canAct && !!def.shooter && cmd.shoot && (ctx.expert || this.spin > 0.8) && this.carried > 0;
     if (this.feeding) this.agitate(ctx.field.fuel, dt);
   }
 
@@ -972,9 +1004,7 @@ export class Robot {
   private runIntake(ctx: RobotContext, dt: number) {
     const def = this.def;
     const intake = def.intake!;
-    if (this.stored.length >= def.storage.capacity) return;
-    // A physically full hopper can't take more: skip capture while the entry slot is packed.
-    if (this.entryBlocked(ctx.field.fuel)) return;
+    if (this.carried >= def.storage.capacity) return;
     this.intakeTokens = Math.min(this.intakeTokens + intake.rate * dt, 3);
     if (this.intakeTokens < 1) return;
     const fuel = ctx.field.fuel;
@@ -1002,14 +1032,14 @@ export class Robot {
           break;
         }
       }
-      if (this.stored.length >= def.storage.capacity) break;
+      if (this.carried >= def.storage.capacity) break;
     }
   }
 
   private ejectTimer = 0;
   private runEject(ctx: RobotContext, dt: number) {
     this.ejectTimer -= dt;
-    if (this.ejectTimer > 0 || this.stored.length === 0 || !this.def.intake) return;
+    if (this.ejectTimer > 0 || this.carried === 0 || !this.def.intake) return;
     this.ejectTimer = 1 / 8;
     const z = this.def.intake.zones[0];
     const i = this.takeStored(ctx.field.fuel, this.entryPoint(z.center[2]));
@@ -1161,7 +1191,7 @@ export class Robot {
       // robot on purpose still gets shots as the shooter sweeps past the HUB.
       const e = this.robotAimError(ctx);
       if (e === null || Math.abs(e) > tol * 1.4) return false;
-      if (this.assistTurning && Math.abs(this.body.angvel().y) > 0.4) return false;
+      if (this.assistTurning && Math.abs(this.body.angvel().y) > 0.15) return false;
     }
     if (sh.hoodMin !== null && Math.abs(this.hoodAngle - aim.barrels[0].elev / DEG) > 4) return false;
     return true;
@@ -1219,7 +1249,7 @@ export class Robot {
     this.fireTimer -= dt;
     // Not ready: don't bank shots while spinning up, empty, or lining up. In expert mode the indexer feeds whenever
     // it's told to, into whatever the wheel is doing (a stalled wheel just drops FUEL out).
-    const ready = ctx.expert ? this.stored.length > 0 : this.spin >= 0.85 && this.stored.length > 0 && (!ctx.assist || this.aimSettled(aim, ctx));
+    const ready = ctx.expert ? this.carried > 0 : this.spin >= 0.85 && this.carried > 0 && (!ctx.assist || this.aimSettled(aim, ctx));
     // The HUD's ready light still means "a shot now would be at full speed".
     this.shotReady = ready && this.spin >= 0.85;
     if (!ready) {
@@ -1228,7 +1258,7 @@ export class Robot {
     }
     // At most one ball per lane per physics step, so balls never spawn on top of each other.
     let fired = 0;
-    while (this.fireTimer <= 0 && this.stored.length > 0 && fired < sh.barrels.length) {
+    while (this.fireTimer <= 0 && this.carried > 0 && fired < sh.barrels.length) {
       this.fireTimer += 1 / sh.rate;
       const b = this.barrel % sh.barrels.length;
       this.barrel++;

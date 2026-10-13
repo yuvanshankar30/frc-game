@@ -174,7 +174,7 @@ The browser tests need the dev server running on :5273 (or `URL=...`) and use yo
 | `node scripts/ingame-closeup.mjs <team> <dir>` | In-game shots with the intake deployed |
 | `node scripts/flow-test.mjs` | Countdown, AUTO-end disable, shooting while rotating, hopper spills, FUEL under the frame |
 | `node scripts/intake-test.mjs` | Driving through FUEL with the intake on vs off: speed, missed entries, spills |
-| `node scripts/fill-test.mjs` | Feeds every robot until its hopper is full: does it reach its capacity? |
+| `node scripts/fill-test.mjs` | Feeds every robot until its hopper is full: does it reach its capacity? (`EXTRA=30` sets capacities past what the drawn hopper holds) |
 | `node scripts/wall-test.mjs` | Full-speed hits on the guardrails and alliance walls (no sinking or climbing), FUEL bulldozed into a wall stays on the field |
 
 Not affiliated with FIRST® or MoSim.

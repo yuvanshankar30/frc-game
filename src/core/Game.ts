@@ -406,7 +406,7 @@ export class Game {
         robotName: p.robot.def.name,
         team: p.robot.def.team,
         alliance: p.robot.alliance,
-        stored: p.robot.stored.length,
+        stored: p.robot.carried,
         capacity: p.robot.def.storage.capacity,
         climbLevel: p.robot.climbLevel,
         climbState: p.robot.climb,

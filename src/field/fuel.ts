@@ -3,7 +3,8 @@ import { RAPIER, type World, GROUP, groups, ALL, MATERIAL, ROBOT_DOMINANCE } fro
 import { FUEL } from './rebuilt/dims';
 import { AERO, liftCoefficient } from '../robot/ballistics';
 
-export type FuelState = 'field' | 'stored' | 'hub' | 'outpost' | 'free';
+/** `carried`: inside a robot but beyond what its drawn hopper holds (off the field, not simulated). */
+export type FuelState = 'field' | 'stored' | 'carried' | 'hub' | 'outpost' | 'free';
 
 /**
  * Pool of FUEL balls. Each ball is a Rapier dynamic body that is disabled while it is
