@@ -42,6 +42,7 @@ export const r1690: BuiltinRobot = {
       capacity: 48,
       preload: 8,
       box: { center: [inches(1.5), inches(10.6), 0], size: [inches(22), inches(15.5), W - inches(2)] },
+      indexer: { mode: 'rotor', center: [-inches(3.5), 0], rps: 2 },
     },
     shooter: {
       barrels: [{ exit: [0, 0, 0] }],
@@ -124,7 +125,7 @@ export const r1690: BuiltinRobot = {
 
     // ---------- fast roller intake (pivot) with kicker
     const ipiv: [number, number, number] = [L / 2 - inches(1.5), y0 + inches(5.5), 0];
-    const intake = groundIntake(kit, 'intake', { pivot: [ipiv[0], ipiv[1]], rollerX: L / 2 + inches(3.25) + inches(3.5), rollerR: inches(1.4), width: W, roller: 'silicone', wheel: 0xbfc5cc, armColor: DARK, kicker: true });
+    const intake = groundIntake(kit, 'intake', { bumper: { face: L / 2 + inches(3.25), top: inches(2.56) + inches(5) }, pivot: [ipiv[0], ipiv[1]], rollerX: L / 2 + inches(3.25) + inches(3.5), rollerR: inches(1.4), width: W, roller: 'silicone', wheel: 0xbfc5cc, armColor: DARK, kicker: true });
     intakeGearbox(kit, 'intake', [ipiv[0], ipiv[1]], -W / 2 + inches(2));
 
     // ---------- LEVEL 1 climber: closed-loop hooks that ride up the outside of the tower

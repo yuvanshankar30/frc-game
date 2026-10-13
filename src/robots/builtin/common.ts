@@ -138,6 +138,8 @@ export function groundIntake(
     tubeColor?: number;
     kicker?: boolean; // secondary roller behind/above the main roller
     deflector?: boolean;
+    /** Front bumper face x and top y: arms dog-leg over the bumper instead of passing through it. */
+    bumper?: { face: number; top: number };
   },
 ) {
   const g = kit.group(name);
@@ -145,34 +147,41 @@ export function groundIntake(
   const r = opts.rollerR ?? inches(1.5);
   const rx = opts.rollerX;
   const ry = r + inches(0.35); // a hair off the carpet
-  const dx = rx - px;
-  const dy = py - ry;
-  const len = Math.hypot(dx, dy);
-  const ang = Math.atan2(dy, dx); // below horizontal
   const W = opts.width;
   const armZ = W / 2 - inches(0.5);
-  // Everything along the arm is built in an "arm space" group: origin at the pivot, +X down the arm.
-  const arm = new THREE.Group();
-  arm.position.set(px, py, 0);
-  arm.rotation.z = -ang;
-  arm.name = `${name}_armspace`;
-  g.add(arm);
   const armColor = opts.armColor ?? 0x24272d;
-  for (const s of [-1, 1]) {
-    if (opts.armStyle === 'tube') {
-      kit.box(`${name}_armtube${s}`, [len / 2, 0, s * armZ], [len + inches(1), inches(1), inches(1)], mat(opts.tubeColor ?? 0x1f5bd8, { metal: 0.5, rough: 0.35 }), arm);
-      kit.box(`${name}_armplate${s}`, [len - inches(1.5), 0, s * (armZ + inches(0.6))], [inches(4), inches(2.6), inches(0.19)], mat(armColor, { metal: 0.4 }), arm);
-    } else {
-      kit.taperArm(`${name}_arm${s}`, len, inches(3.2), inches(2.2), [0, 0, s * armZ], armColor, arm);
+  // Over-the-bumper dog-leg: pivot → knee just above/past the front bumper's top edge → roller at the carpet.
+  const knee: [number, number] | null = opts.bumper ? [opts.bumper.face + inches(0.7), Math.max(opts.bumper.top + inches(1.4), ry + inches(2))] : null;
+  const pts: [number, number][] = knee ? [[px, py], knee, [rx, ry]] : [[px, py], [rx, ry]];
+  const segs: { group: THREE.Group; len: number; ang: number }[] = [];
+  for (let k = 0; k < pts.length - 1; k++) {
+    const [x0, y0] = pts[k];
+    const [x1, y1] = pts[k + 1];
+    const len = Math.hypot(x1 - x0, y1 - y0);
+    const ang = Math.atan2(y0 - y1, x1 - x0); // below horizontal
+    const seg = new THREE.Group();
+    seg.position.set(x0, y0, 0);
+    seg.rotation.z = -ang;
+    seg.name = `${name}_seg${k}`;
+    g.add(seg);
+    segs.push({ group: seg, len, ang });
+    for (const s of [-1, 1]) {
+      if (opts.armStyle === 'tube') {
+        kit.box(`${name}_armtube${k}_${s}`, [len / 2, 0, s * armZ], [len + inches(1), inches(1), inches(1)], mat(opts.tubeColor ?? 0x1f5bd8, { metal: 0.5, rough: 0.35 }), seg);
+        if (k === segs.length - 1 && k === pts.length - 2) kit.box(`${name}_armplate${s}`, [len - inches(1.5), 0, s * (armZ + inches(0.6))], [inches(4), inches(2.6), inches(0.19)], mat(armColor, { metal: 0.4 }), seg);
+      } else {
+        kit.taperArm(`${name}_arm${k}_${s}`, len, k === 0 ? inches(3.2) : inches(2.6), k === pts.length - 2 ? inches(2.2) : inches(2.6), [0, 0, s * armZ], armColor, seg);
+      }
+      // Hub at the start of each segment (pivot bearing / knee joint plate).
+      kit.cyl(`${name}_hub${k}_${s}`, [0, 0, s * armZ], k === 0 ? inches(1) : inches(1.3), inches(0.6), 'z', k === 0 ? M.aluDark() : mat(armColor, { metal: 0.4 }), seg, 16);
+      kit.belt(`${name}_belt${k}_${s}`, [k === 0 ? inches(2) : 0, 0], [len, 0], s * (armZ + inches(0.35)), seg);
     }
-    // Pivot hub + bearing.
-    kit.cyl(`${name}_hub${s}`, [0, 0, s * armZ], inches(1), inches(0.6), 'z', M.aluDark(), arm, 16);
-    // Belt from the motor pulley near the pivot to the roller pulley.
-    kit.belt(`${name}_belt${s}`, [inches(2), 0], [len, 0], s * (armZ + inches(0.35)), arm);
   }
-  // Crossbar between the arms (2x1 tube) and an optional polycarb deflector.
-  kit.box(`${name}_crossbar`, [len * 0.38, inches(1.2), 0], [inches(1), inches(2), W - inches(1)], M.tube(), arm);
-  if (opts.deflector !== false) kit.box(`${name}_deflector`, [len * 0.65, inches(1.6), 0], [len * 0.55, inches(0.1), W - inches(1.6)], M.polycarb(), arm);
+  const first = segs[0];
+  const last = segs[segs.length - 1];
+  const ang = last.ang;
+  kit.box(`${name}_crossbar`, [first.len * 0.45, inches(1.2), 0], [inches(1), inches(2), W - inches(1)], M.tube(), first.group);
+  if (opts.deflector !== false) kit.box(`${name}_deflector`, [last.len * 0.55, inches(1.6), 0], [last.len * 0.6, inches(0.1), W - inches(1.6)], M.polycarb(), last.group);
   // Main roller at the arm tip (built in robot space so it can carry its own spin joint).
   const rollerName = `${name}_roller`;
   const roller =
@@ -188,8 +197,8 @@ export function groundIntake(
     kickerCenter = [kx, ky, 0];
   }
   // Roller motor on the arm, near the pivot.
-  kit.motor(`${name}_motor`, [px + Math.cos(ang) * inches(2), py - Math.sin(ang) * inches(2), armZ - inches(1.6)], 'z', g);
-  return { group: g, roller, rollerCenter: [rx, ry, 0] as [number, number, number], kickerNode, kickerCenter, deployAngleDeg: (ang * 180) / Math.PI };
+  kit.motor(`${name}_motor`, [px + Math.cos(first.ang) * inches(2), py - Math.sin(first.ang) * inches(2), armZ - inches(1.6)], 'z', g);
+  return { group: g, roller, rollerCenter: [rx, ry, 0] as [number, number, number], kickerNode, kickerCenter, deployAngleDeg: (first.ang * 180) / Math.PI };
 }
 
 /** Pivot gearbox on the frame for an intake (visual, stays on the chassis). */

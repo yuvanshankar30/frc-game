@@ -85,6 +85,7 @@ export class FuelSystem {
     this.lastShooter[i] = shooter;
     this.colliders[i].setCollisionGroups(FIELD_GROUPS);
     this.bodies[i].setLinearDamping(FUEL_AIR_DAMPING);
+    this.bodies[i].enableCcd(false);
     this.ghostUntil[i] = -1;
     if (v && v.x * v.x + v.y * v.y + v.z * v.z > 25) {
       b.enableCcd(true);
@@ -110,10 +111,8 @@ export class FuelSystem {
     this.colliders[i].setCollisionGroups(STORED_GROUPS);
     this.state[i] = 'stored';
     this.ghostUntil[i] = -1;
-    if (this.shotAt[i] >= 0) {
-      b.enableCcd(false);
-      this.shotAt[i] = -1;
-    }
+    this.shotAt[i] = -1;
+    b.enableCcd(true); // carried FUEL gets CCD so it stays inside the hopper walls
   }
 
   /** Take ball `i` off the field into a holding state. */

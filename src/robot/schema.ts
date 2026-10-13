@@ -114,6 +114,8 @@ export const robotSchema = z.object({
     preload: z.number().int().nonnegative().max(8).default(8),
     /** Hopper volume (robot frame) used to draw the FUEL being carried. */
     box: boxSchema.nullable().default(null),
+    /** How the indexer moves carried FUEL while feeding: a spinning rotor/spindexer (swirl about `center`, robot-frame x,z) or a floor that drives toward the shooter. */
+    indexer: z.object({ mode: z.enum(['rotor', 'floor']).default('floor'), center: z.tuple([z.number(), z.number()]).default([0, 0]), rps: z.number().default(2.25) }).nullable().default(null),
     /** Net over the hopper: FUEL can push it up by `stretch` meters above the box top (drawn draped over the pile). */
     net: z.object({ stretch: z.number().nonnegative().default(0.12), color: z.string().default('#15171b') }).nullable().default(null),
   }),

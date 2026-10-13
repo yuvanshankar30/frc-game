@@ -29,7 +29,6 @@ export interface Settings {
   pixelRatio: number;
   antialias: boolean;
   volume: number;
-  showTrajectory: boolean;
   autoTeleopGap: number;
   /** Max keyboard / stick rotation as a fraction of the robot's top turn rate. */
   rotationSpeed: number;
@@ -53,7 +52,6 @@ export const DEFAULT_SETTINGS: Settings = {
   pixelRatio: 2,
   antialias: true,
   volume: 0.6,
-  showTrajectory: true,
   autoTeleopGap: 3,
   rotationSpeed: 0.7,
   rotationRamp: 0.18,

@@ -13,7 +13,6 @@ import { applyEnvironment } from '../render/environment';
 import { useStore, type GameMode, type PlayerSetup, type Settings, type Hud } from '../ui/store';
 import { sfx } from './audio';
 import { sideTransform } from '../field/builder';
-import { TrajectoryPreview } from '../render/trajectory';
 
 interface Player {
   /** Smoothed rotation command (keyboard keys ramp instead of snapping). */
@@ -55,7 +54,6 @@ export class Game {
   private banner: { text: string; until: number } | null = null;
   private time = 0;
   private config!: GameConfig;
-  private trajectory: TrajectoryPreview | null = null;
   private results: Hud['results'] = null;
   private resizeObs: ResizeObserver;
 
@@ -95,7 +93,6 @@ export class Game {
       this.players.push({ setup, input: new DriverInput(device), robot, rig, assist: config.settings.assist, rotSmooth: 0, shotTimes: [] });
       n++;
     }
-    if (config.settings.showTrajectory) this.trajectory = new TrajectoryPreview(this.scene);
     this.resetMatch();
     this.resize();
     if (import.meta.env.DEV) (window as unknown as { __game: Game }).__game = this;
@@ -136,15 +133,20 @@ export class Game {
       this.field.setHubActive('red', true);
       this.showBanner('FREE PRACTICE', 2);
     } else {
-      this.match.start();
-      this.matchStart = this.time;
-      this.showBanner('AUTO', 2);
-      sfx.bell();
+      // Pre-match: robots disabled for a 3-2-1 countdown, then the match starts with the "Charge!" cue.
+      this.match.phase = 'pre';
+      this.match.score = { blue: { ...emptyish() }, red: { ...emptyish() } };
+      this.countdown = 3.2;
+      this.lastCount = 4;
     }
     this.lastPhase = this.match.phase;
   }
 
   private lastPhase: Phase = 'pre';
+  private lastSpeed = 0;
+  /** Seconds left in the pre-match countdown (match modes). */
+  private countdown = 0;
+  private lastCount = 0;
 
   private allRobots(): Robot[] {
     return this.players.map((p) => p.robot);
@@ -178,22 +180,23 @@ export class Game {
     }
     switch (to) {
       case 'pause':
-        this.showBanner('AUTO COMPLETE', 2.5);
+        this.showBanner('AUTO COMPLETE — ROBOTS DISABLED', this.match.autoTeleopGap);
         sfx.buzzer();
         break;
       case 'transition':
         this.showBanner('TELEOP — TRANSITION SHIFT', 2.5);
-        sfx.bell();
+        sfx.bells();
         break;
       case 'shift': {
         const active = this.match.isHubActive('blue') ? 'BLUE' : 'RED';
         this.showBanner(`SHIFT ${this.match.shift} — ${active} HUB ACTIVE`, 2.5);
-        sfx.horn();
+        const mine = this.players[0]?.robot.alliance;
+        sfx.chime(mine ? this.match.isHubActive(mine) : true);
         break;
       }
       case 'endgame':
         this.showBanner('END GAME — BOTH HUBS ACTIVE', 2.5);
-        sfx.horn();
+        sfx.whistle();
         break;
       case 'post': {
         for (const a of ['blue', 'red'] as const) {
@@ -287,11 +290,23 @@ export class Game {
       if (steps === 6) this.acc = 0;
     }
 
+    // Robot sounds (local player 1) + impacts.
+    const p0 = this.players[0];
+    if (p0) {
+      const enabled = !this.paused && (this.config.mode === 'practice' || (this.match.running && this.match.phase !== 'pause'));
+      const v = p0.robot.body.linvel();
+      const speed = Math.hypot(v.x, v.z);
+      sfx.updateRobot({ speed, maxSpeed: p0.robot.def.drivetrain.maxSpeed, spin: p0.robot.spin, intake: p0.robot.intakeOn, feeding: p0.robot.feeding, enabled });
+      const dv = this.lastSpeed - speed;
+      if (dv > 1.6 && !this.paused) sfx.impact(Math.min(1, dv / 4));
+      this.lastSpeed = speed;
+    }
+    if (this.paused) sfx.stopLoops();
+
     // Render.
     for (const r of this.allRobots()) r.sync();
     this.field.sync();
     for (const p of this.players) p.rig.update(p.robot, dt);
-    if (this.trajectory && this.players[0]) this.trajectory.update(this.players[0].robot, this.field, this.players[0].assist);
     this.render();
 
     this.hudTimer -= dt;
@@ -306,7 +321,9 @@ export class Game {
     const auto = this.match.phase === 'auto';
     const running = this.config.mode === 'practice' || this.match.running;
     this.players.forEach((p, i) => {
-      const cmd = running || this.match.phase === 'pre' ? cmds[i] : idleCommand();
+      // Robots are disabled during the pre-match countdown, the AUTO→TELEOP pause and after the match.
+      const enabled = this.config.mode === 'practice' || (running && this.match.phase !== 'pause');
+      const cmd = enabled ? cmds[i] : idleCommand();
       const shooting = cmd.shoot;
       const before = p.robot.stats.shots;
       const intakedBefore = p.robot.stats.intaked;
@@ -321,6 +338,23 @@ export class Game {
     });
     this.field.step(dt);
     this.world.step();
+    if (this.config.mode !== 'practice' && this.match.phase === 'pre' && this.countdown > 0) {
+      this.countdown -= dt;
+      const n = Math.ceil(this.countdown);
+      if (n !== this.lastCount && n >= 1 && n <= 3) {
+        this.lastCount = n;
+        this.showBanner(`${n}`, 0.9);
+        sfx.countdown(false);
+      }
+      if (this.countdown <= 0) {
+        this.countdown = 0;
+        this.match.start();
+        this.matchStart = this.time;
+        this.lastPhase = 'auto';
+        this.showBanner('AUTO', 2);
+        sfx.charge();
+      }
+    }
     if (this.config.mode !== 'practice') {
       this.match.tick(dt);
       if (this.match.phase !== this.lastPhase) {
@@ -426,6 +460,7 @@ export class Game {
 
   dispose() {
     this.disposed = true;
+    sfx.stopLoops();
     cancelAnimationFrame(this.raf);
     this.resizeObs.disconnect();
     this.renderer.dispose();

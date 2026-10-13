@@ -1,0 +1,170 @@
+solid robot
+facet normal 0 0 0
+ outer loop
+  vertex 0 0 0
+  vertex 700 650 0
+  vertex 700 0 0
+ endloop
+endfacet
+facet normal 0 0 0
+ outer loop
+  vertex 0 0 0
+  vertex 0 650 0
+  vertex 700 650 0
+ endloop
+endfacet
+facet normal 0 0 0
+ outer loop
+  vertex 0 0 120
+  vertex 700 0 120
+  vertex 700 650 120
+ endloop
+endfacet
+facet normal 0 0 0
+ outer loop
+  vertex 0 0 120
+  vertex 700 650 120
+  vertex 0 650 120
+ endloop
+endfacet
+facet normal 0 0 0
+ outer loop
+  vertex 0 0 0
+  vertex 700 0 0
+  vertex 700 0 120
+ endloop
+endfacet
+facet normal 0 0 0
+ outer loop
+  vertex 0 0 0
+  vertex 700 0 120
+  vertex 0 0 120
+ endloop
+endfacet
+facet normal 0 0 0
+ outer loop
+  vertex 700 0 0
+  vertex 700 650 0
+  vertex 700 650 120
+ endloop
+endfacet
+facet normal 0 0 0
+ outer loop
+  vertex 700 0 0
+  vertex 700 650 120
+  vertex 700 0 120
+ endloop
+endfacet
+facet normal 0 0 0
+ outer loop
+  vertex 700 650 0
+  vertex 0 650 0
+  vertex 0 650 120
+ endloop
+endfacet
+facet normal 0 0 0
+ outer loop
+  vertex 700 650 0
+  vertex 0 650 120
+  vertex 700 650 120
+ endloop
+endfacet
+facet normal 0 0 0
+ outer loop
+  vertex 0 650 0
+  vertex 0 0 0
+  vertex 0 0 120
+ endloop
+endfacet
+facet normal 0 0 0
+ outer loop
+  vertex 0 650 0
+  vertex 0 0 120
+  vertex 0 650 120
+ endloop
+endfacet
+facet normal 0 0 0
+ outer loop
+  vertex 200 100 120
+  vertex 500 550 120
+  vertex 500 100 120
+ endloop
+endfacet
+facet normal 0 0 0
+ outer loop
+  vertex 200 100 120
+  vertex 200 550 120
+  vertex 500 550 120
+ endloop
+endfacet
+facet normal 0 0 0
+ outer loop
+  vertex 200 100 400
+  vertex 500 100 400
+  vertex 500 550 400
+ endloop
+endfacet
+facet normal 0 0 0
+ outer loop
+  vertex 200 100 400
+  vertex 500 550 400
+  vertex 200 550 400
+ endloop
+endfacet
+facet normal 0 0 0
+ outer loop
+  vertex 200 100 120
+  vertex 500 100 120
+  vertex 500 100 400
+ endloop
+endfacet
+facet normal 0 0 0
+ outer loop
+  vertex 200 100 120
+  vertex 500 100 400
+  vertex 200 100 400
+ endloop
+endfacet
+facet normal 0 0 0
+ outer loop
+  vertex 500 100 120
+  vertex 500 550 120
+  vertex 500 550 400
+ endloop
+endfacet
+facet normal 0 0 0
+ outer loop
+  vertex 500 100 120
+  vertex 500 550 400
+  vertex 500 100 400
+ endloop
+endfacet
+facet normal 0 0 0
+ outer loop
+  vertex 500 550 120
+  vertex 200 550 120
+  vertex 200 550 400
+ endloop
+endfacet
+facet normal 0 0 0
+ outer loop
+  vertex 500 550 120
+  vertex 200 550 400
+  vertex 500 550 400
+ endloop
+endfacet
+facet normal 0 0 0
+ outer loop
+  vertex 200 550 120
+  vertex 200 100 120
+  vertex 200 100 400
+ endloop
+endfacet
+facet normal 0 0 0
+ outer loop
+  vertex 200 550 120
+  vertex 200 100 400
+  vertex 200 550 400
+ endloop
+endfacet
+endsolid robot

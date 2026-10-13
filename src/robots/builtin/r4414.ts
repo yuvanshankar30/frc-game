@@ -24,7 +24,7 @@ import { inches } from '../../util/units';
 const L = inches(23.5);
 const W = inches(31.5);
 const H = inches(21.5);
-const EXT = inches(10);
+const EXT = inches(8);
 const TEAL = 0x1a9e9a;
 const DARK = 0x1d1f23;
 const TP: [number, number, number] = [-inches(2.5), inches(13), -inches(1.5)]; // turret pivot (above the rotor tower; A-frame tops out under 21.5in)
@@ -52,8 +52,9 @@ export const r4414: BuiltinRobot = {
     storage: {
       capacity: 88,
       preload: 8,
-      box: { center: [(-L / 2 + inches(1) + L / 2 + EXT - inches(1)) / 2, inches(11.5), 0], size: [L + EXT - inches(2), inches(17.5), W - inches(2.5)] },
+      box: { center: [(-L / 2 + inches(1) + L / 2 + EXT - inches(1)) / 2, inches(11.85), 0], size: [L + EXT - inches(2), inches(18.3), W - inches(1.5)] },
       net: { stretch: inches(5), color: '#101114' },
+      indexer: { mode: 'rotor', center: [-inches(1.5), inches(1)], rps: 2.25 },
     },
     shooter: {
       barrels: [{ exit: [0, 0, 0] }],
@@ -131,49 +132,79 @@ export const r4414: BuiltinRobot = {
     kit.pocketPlate('deck_arm', [-inches(3.5), deckY, 0], inches(4), W - inches(1), { color: DARK, plane: 'xz', cell: inches(2), rib: inches(0.35) });
     kit.pocketPlate('deck_spine', [-L / 2 + inches(4), deckY, -inches(1.5)], inches(6), inches(9), { color: DARK, plane: 'xz', cell: inches(2), rib: inches(0.35) });
 
-    // ---------- sliding intake + extending carbon-fiber hopper box (on 10DP racks)
+    // ---------- sliding intake + extending carbon-fiber hopper box (on 10DP racks through the bumper gaps)
+    // Stowed, the box's front face is flush with the front bumper; it rides ABOVE the bumper and the rollers hang
+    // in front of the bumper face at carpet height. Deploying slides everything EXT forward and it latches out.
     const slide = kit.group('slide');
-    const fx = L / 2 + inches(3.5) + inches(0.5); // front face of the bumper
+    const bt = inches(3.5); // bumper thickness
+    const bumperTop = inches(2.5) + inches(5.5);
+    const face = L / 2 + bt; // front bumper face
+    const bx0 = L / 2 - inches(5); // box rear edge (inside the frame, overlaps the walls when stowed)
+    const bx1 = face + inches(0.3); // box front face
+    const boxTop = wallTop - inches(0.6);
     for (const s of [-1, 1]) {
-      const z = s * (W / 2 - inches(0.2));
-      // tall CF side panel with tapered top-front edge
+      const z = s * (W / 2 - inches(0.25));
+      // CF side plate: from just above the bumper to the wall top, top-front corner chamfered down.
       const sh = new THREE.Shape();
-      const x0 = L / 2 - inches(4);
-      const x1 = fx + EXT - inches(1.5);
-      sh.moveTo(x0, y0 - inches(0.5));
-      sh.lineTo(x1, y0 - inches(0.5));
-      sh.lineTo(x1, y0 + inches(10));
-      sh.lineTo(x1 - inches(4), wallTop - inches(1));
-      sh.lineTo(x0, wallTop - inches(1));
+      sh.moveTo(bx0, bumperTop + inches(0.3));
+      sh.lineTo(bx1, bumperTop + inches(0.3));
+      sh.lineTo(bx1, boxTop - inches(4));
+      sh.lineTo(bx1 - inches(3.5), boxTop);
+      sh.lineTo(bx0, boxTop);
       sh.closePath();
       const geo = new THREE.ExtrudeGeometry(sh, { depth: inches(0.09), bevelEnabled: false });
       geo.translate(0, 0, z - inches(0.045));
       kit.add(new THREE.Mesh(geo, M.cf()), `ext_side_${s}`, slide);
-      kit.panel(`ext_edge_${s}`, [x1 - inches(0.6), y0 + inches(4.5), z + s * inches(0.08)], inches(1.2), inches(9.5), dark, 'xy', slide);
-      // 10DP gear racks (doubled polycarbonate) + rack motor
-      kit.box(`rack_${s}`, [L / 2 - inches(1), y0 + inches(0.4), s * (W / 2 - inches(2.2))], [inches(16), inches(0.9), inches(0.5)], mat(0x111214, { rough: 0.5 }), slide);
-      for (let k = 0; k < 24; k++) kit.box(`rack_tooth_${s}_${k}`, [L / 2 - inches(8.6) + k * inches(0.65), y0 + inches(0.95), s * (W / 2 - inches(2.2))], [inches(0.25), inches(0.25), inches(0.5)], mat(0x111214), slide);
-      kit.motor(`rack_motor_${s}`, [L / 2 - inches(2.5), y0 + inches(3.2), s * (W / 2 - inches(3.3))], 'y', undefined, true);
-      // bent aluminum impact guard
-      kit.box(`guard_${s}`, [x1 + inches(0.6), inches(4.5), z], [inches(2.2), inches(6), inches(0.12)], M.alu(), slide, [0, 0, 0.3]);
+      // Riveted aluminum edge angle along the front + bottom.
+      kit.box(`ext_angle_front_${s}`, [bx1 - inches(0.35), (bumperTop + boxTop - inches(4)) / 2, z], [inches(0.7), boxTop - inches(4) - bumperTop, inches(0.7)], dark, slide);
+      kit.box(`ext_angle_bot_${s}`, [(bx0 + bx1) / 2, bumperTop + inches(0.6), z], [bx1 - bx0, inches(0.6), inches(0.7)], dark, slide);
+      // Roller side plate: drops from the box down in front of the bumper to carry the rollers.
+      const rp = new THREE.Shape();
+      rp.moveTo(bx1 - inches(1), bumperTop + inches(1.5));
+      rp.lineTo(face + inches(5.4), bumperTop - inches(1));
+      rp.lineTo(face + inches(5.4), inches(0.6));
+      rp.lineTo(face + inches(0.4), inches(0.6));
+      rp.lineTo(face + inches(0.4), bumperTop - inches(1));
+      rp.closePath();
+      const rg = new THREE.ExtrudeGeometry(rp, { depth: inches(0.25), bevelEnabled: false });
+      rg.translate(0, 0, s * (W / 2 + bt * 0.15) - inches(0.125));
+      kit.add(new THREE.Mesh(rg, dark), `roller_plate_${s}`, slide);
+      // 10DP racks (doubled polycarbonate) passing through the ~1.3in bumper gaps near the corners.
+      const rz = s * (W / 2 - inches(1.6));
+      kit.box(`rack_${s}`, [L / 2 - inches(1), inches(5.2), rz], [inches(14), inches(0.9), inches(0.5)], mat(0xe9eef3, { opacity: 0.7, rough: 0.2 }), slide);
+      for (let k = 0; k < 20; k++) kit.box(`rack_tooth_${s}_${k}`, [L / 2 - inches(7.6) + k * inches(0.65), inches(5.75), rz], [inches(0.25), inches(0.25), inches(0.5)], mat(0xd8dee5), slide);
+      kit.motor(`rack_x44_${s}`, [L / 2 - inches(3), inches(7.5), s * (W / 2 - inches(3))], 'y', undefined, true);
+      kit.pulley(`rack_pinion_${s}`, [L / 2 - inches(3), inches(6.2), rz], inches(0.6), { color: 0x2a2c31 });
+      // Bent aluminum impact guard at the outer front corner.
+      kit.box(`guard_${s}`, [face + inches(5), inches(3.2), s * (W / 2 + bt * 0.3)], [inches(1.6), inches(4.5), inches(0.12)], M.alu(), slide, [0, 0, 0.35]);
     }
-    kit.panel('ext_front', [fx + EXT - inches(1.5), y0 + inches(5.5), 0], W - inches(0.4), inches(8), M.cf(), 'zy', slide);
-    kit.panel('ext_floor', [fx + EXT / 2 - inches(1), y0 - inches(0.4), 0], EXT + inches(4), W - inches(1), dark, 'xz', slide);
-    const mainRoller = kit.tubeRoller('intake_main', fx + EXT - inches(3.2), inches(1.85), -W / 2 + inches(1.2), W / 2 - inches(1.2), inches(1.5), 0xeef2f6, slide);
-    const botRoller = kit.tubeRoller('intake_bottom', fx + EXT - inches(6.5), inches(1.1), -W / 2 + inches(1.2), W / 2 - inches(1.2), inches(0.75), 0xd5dde6, slide);
+    kit.panel('ext_front', [bx1, (bumperTop + boxTop - inches(4)) / 2 + inches(0.3), 0], W - inches(0.5), boxTop - inches(4) - bumperTop, M.cf(), 'zy', slide);
+    const chamferPanel = kit.box('ext_chamfer', [bx1 - inches(1.75), boxTop - inches(2), 0], [inches(0.08), inches(4.9), W - inches(0.5)], M.cf(), slide);
+    chamferPanel.rotation.z = Math.PI / 4;
+    kit.box('ext_floor', [(bx0 + bx1) / 2, bumperTop + inches(0.3), 0], [bx1 - bx0, inches(0.12), W - inches(0.6)], dark, slide);
+    // 3in 1/8in-wall polycarbonate main roller + 1.5in bottom bar, in front of the bumper face.
+    const mainC: [number, number, number] = [face + inches(1.8), inches(2.3), 0];
+    const botC: [number, number, number] = [face + inches(4.1), inches(0.95), 0];
+    const mainRoller = kit.tubeRoller('intake_main', mainC[0], mainC[1], -W / 2 - bt * 0.1, W / 2 + bt * 0.1, inches(1.5), 0xeef2f6, slide);
+    const botRoller = kit.tubeRoller('intake_bottom', botC[0], botC[1], -W / 2 - bt * 0.1, W / 2 + bt * 0.1, inches(0.75), 0xd5dde6, slide);
     for (const s of [-1, 1]) {
-      kit.motor(`intake_x60_${s}`, [fx + EXT - inches(4.5), inches(5.5), s * (W / 2 - inches(3.2))], 'z', slide);
-      kit.pulley(`intake_pulley_${s}`, [fx + EXT - inches(3.2), inches(1.85), s * (W / 2 - inches(0.9))], inches(1.1), { parent: slide });
+      kit.motor(`intake_x60_${s}`, [face + inches(2.5), bumperTop + inches(2.5), s * (W / 2 - inches(3))], 'z', slide);
+      kit.belt(`intake_belt_${s}`, [face + inches(2.5), bumperTop + inches(2.5)], [mainC[0], mainC[1]], s * (W / 2 + bt * 0.25));
     }
-    kit.motor('intake_x44', [fx + EXT - inches(7), inches(3.5), -W / 2 + inches(5)], 'z', slide, true);
+    kit.motor('intake_x44', [face + inches(3.5), bumperTop + inches(1.5), 0], 'z', slide, true);
 
     // ---------- Dye Rotor (V10): spoked pan, curved wall on standoffs, center tower, spiral hook
     const ry = y0 + inches(0.4);
     const rotor = kit.group('dye_rotor');
     kit.cyl('rotor_pan', [ROTOR[0], ry, ROTOR[2]], inches(10.4), inches(0.2), 'y', dark, rotor, 56);
+    // Raised paddle fins that sweep FUEL around (visible when the rotor turns).
+    for (let k = 0; k < 4; k++) {
+      const a = (k / 4) * Math.PI * 2 + 0.3;
+      kit.box(`rotor_fin_${k}`, [ROTOR[0] + Math.cos(a) * inches(6.5), ry + inches(1.4), ROTOR[2] + Math.sin(a) * inches(6.5)], [inches(7), inches(2.4), inches(0.3)], mat(0xd8dde2, { metal: 0.3, rough: 0.4 }), rotor, [0, -a, 0]);
+    }
     for (let k = 0; k < 10; k++) {
       const a = (k / 10) * Math.PI * 2;
-      kit.box(`rotor_spoke_${k}`, [ROTOR[0] + Math.cos(a) * inches(5.5), ry + inches(0.25), ROTOR[2] + Math.sin(a) * inches(5.5)], [inches(9.8), inches(0.35), inches(0.5)], mat(0x2b2e34, { metal: 0.4 }), rotor, [0, -a, 0]);
+      kit.box(`rotor_spoke_${k}`, [ROTOR[0] + Math.cos(a) * inches(5.5), ry + inches(0.25), ROTOR[2] + Math.sin(a) * inches(5.5)], [inches(9.8), inches(0.35), inches(0.5)], k % 2 ? mat(0x2b2e34, { metal: 0.4 }) : mat(TEAL, { metal: 0.5, rough: 0.35 }), rotor, [0, -a, 0]);
     }
     const ringGeo = new THREE.TorusGeometry(inches(7), inches(0.25), 6, 48);
     const ring = new THREE.Mesh(ringGeo, mat(0x2b2e34, { metal: 0.4 }));
@@ -272,8 +303,8 @@ export const r4414: BuiltinRobot = {
     kit.camera('cam_back', [-L / 2 + inches(1), H - inches(1.5), -W / 2 + inches(3)], Math.PI);
 
     rig.joint({ id: 'slide', type: 'prismatic', driver: 'intake-deploy', pivot: [0, 0, 0], axis: [1, 0, 0], stowed: 0, active: EXT, speed: 1.4 }, slide);
-    rig.joint({ id: 'roll_main', type: 'spin', driver: 'intake-roller', parent: 'slide', pivot: [fx + EXT - inches(3.2), inches(1.85), 0], axis: [0, 0, 1], speed: 2200 }, mainRoller);
-    rig.joint({ id: 'roll_bot', type: 'spin', driver: 'intake-roller', parent: 'slide', pivot: [fx + EXT - inches(6.5), inches(1.1), 0], axis: [0, 0, 1], speed: 2600 }, botRoller);
+    rig.joint({ id: 'roll_main', type: 'spin', driver: 'intake-roller', parent: 'slide', pivot: mainC, axis: [0, 0, 1], speed: 2200 }, mainRoller);
+    rig.joint({ id: 'roll_bot', type: 'spin', driver: 'intake-roller', parent: 'slide', pivot: botC, axis: [0, 0, 1], speed: 2600 }, botRoller);
     rig.joint({ id: 'rotor', type: 'spin', driver: 'indexer', pivot: [ROTOR[0], 0, ROTOR[2]], axis: [0, 1, 0], speed: 810 }, rotor);
     rig.joint({ id: 'turret', type: 'revolute', driver: 'turret', pivot: TP, axis: [0, 1, 0], speed: 540 }, turretG);
     rig.joint({ id: 'hood', type: 'revolute', driver: 'hood', parent: 'turret', pivot: hoodPivot, axis: [0, 0, 1], stowed: 0, active: -18, speed: 200 }, hood);
@@ -282,6 +313,7 @@ export const r4414: BuiltinRobot = {
 
     const exit: [number, number, number] = [fwC[0] + inches(3), fwC[1] + inches(1.6), TP[2]];
     const shooter = { ...r4414.def.shooter!, barrels: [{ exit, pivot: TP }] };
-    return { model: kit.root, joints: rig.joints, parts: rig.parts, patch: { shooter } };
+    const zones = [{ center: [mainC[0] + EXT + inches(1.2), inches(3), 0] as [number, number, number], size: [inches(6), inches(6), W] as [number, number, number] }];
+    return { model: kit.root, joints: rig.joints, parts: rig.parts, patch: { shooter, intake: { ...r4414.def.intake!, zones } } };
   },
 };

@@ -105,7 +105,7 @@ export const r254: BuiltinRobot = {
 
     // ---------- front intake: blue tube bracing, compliant roller, top roller, kicker ramp
     const ipiv: [number, number, number] = [L / 2 - inches(1), y0 + inches(8), 0];
-    const intake = groundIntake(kit, 'intake', { pivot: [ipiv[0], ipiv[1]], rollerX: L / 2 + inches(3.5) + inches(4.5), rollerR: inches(1.5), width: W, wheel: 0x3a7bff, armColor: BLK, armStyle: 'tube', tubeColor: BLUE, kicker: true, deflector: false });
+    const intake = groundIntake(kit, 'intake', { bumper: { face: L / 2 + inches(3.5), top: inches(2.56) + inches(5) }, pivot: [ipiv[0], ipiv[1]], rollerX: L / 2 + inches(3.5) + inches(4.5), rollerR: inches(1.5), width: W, wheel: 0x3a7bff, armColor: BLK, armStyle: 'tube', tubeColor: BLUE, kicker: true, deflector: false });
     intakeGearbox(kit, 'intake', [ipiv[0], ipiv[1]], W / 2 - inches(2));
     kit.box('kicker_ramp', [intake.rollerCenter[0] - inches(4), inches(4.2), 0], [inches(6), inches(0.2), W - inches(2)], M.steel(), intake.group, [0, 0, 0.42]);
     // Blue triangular tube bracing at the front corners (as in the reveal photo).
@@ -117,7 +117,7 @@ export const r254: BuiltinRobot = {
     kit.led('led', [L / 2 - inches(0.8), H - inches(2), 0], [0.006, inches(0.6), W - inches(4)], 0xf2b705);
     void blk;
 
-    rig.joint({ id: 'intake', type: 'revolute', driver: 'intake-deploy', pivot: ipiv, axis: [0, 0, 1], stowed: 95, active: 0, speed: 560 }, intake.group);
+    rig.joint({ id: 'intake', type: 'revolute', driver: 'intake-deploy', pivot: ipiv, axis: [0, 0, 1], stowed: intake.deployAngleDeg + 95, active: 0, speed: 560 }, intake.group);
     rig.joint({ id: 'intake_roll', type: 'spin', driver: 'intake-roller', parent: 'intake', pivot: intake.rollerCenter, axis: [0, 0, 1], speed: 2000 }, intake.roller);
     if (intake.kickerNode) rig.joint({ id: 'intake_kick', type: 'spin', driver: 'intake-roller', parent: 'intake', pivot: intake.kickerCenter!, axis: [0, 0, -1], speed: 2400 }, intake.kickerNode);
     rig.joint({ id: 'feed', type: 'spin', driver: 'indexer', pivot: [-L / 2 + inches(6.6), inches(12.5), 0], axis: [0, 0, -1], speed: 1500 }, feed);

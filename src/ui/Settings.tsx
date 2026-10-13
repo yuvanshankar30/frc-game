@@ -155,13 +155,6 @@ export function SettingsScreen() {
             </select>
           </div>
           <div className="field-row">
-            <div>
-              Shot trajectory preview
-              <div className="hint">Dashed arc showing where the next FUEL will go.</div>
-            </div>
-            <input type="checkbox" checked={settings.showTrajectory} onChange={(e) => setSettings({ showTrajectory: e.target.checked })} />
-          </div>
-          <div className="field-row">
             <div>AUTO → TELEOP delay (s)</div>
             <input type="number" min={0} max={10} step={1} value={settings.autoTeleopGap} onChange={(e) => setSettings({ autoTeleopGap: Number(e.target.value) })} style={{ width: 80 }} />
           </div>

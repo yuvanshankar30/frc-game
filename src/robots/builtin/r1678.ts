@@ -127,7 +127,7 @@ export const r1678: BuiltinRobot = {
     const armLen = inches(12.8);
     const rr = inches(1);
     const dyArm = ipiv[1] - (rr + inches(0.35));
-    const intake = groundIntake(kit, 'intake', { pivot: [ipiv[0], ipiv[1]], rollerX: ipiv[0] + Math.sqrt(armLen * armLen - dyArm * dyArm), rollerR: rr, width: W, roller: 'silicone', wheel: LIME, armColor: 0x2b2f35, kicker: true });
+    const intake = groundIntake(kit, 'intake', { bumper: { face: L / 2 + inches(3.5), top: inches(2.56) + inches(5) }, pivot: [ipiv[0], ipiv[1]], rollerX: ipiv[0] + Math.sqrt(armLen * armLen - dyArm * dyArm), rollerR: rr, width: W, roller: 'silicone', wheel: LIME, armColor: 0x2b2f35, kicker: true });
     intakeGearbox(kit, 'intake', [ipiv[0], ipiv[1]], -W / 2 + inches(2));
     kit.tube('crash_bar', [intake.rollerCenter[0] + inches(1.8), inches(4.2), -W / 2 + inches(1)], [intake.rollerCenter[0] + inches(1.8), inches(4.2), W / 2 - inches(1)], [inches(2), inches(1)], intake.group);
     for (let k = 0; k < 2; k++) kit.cyl(`cf_guide_${k}`, [ipiv[0] + inches(3 + k * 2.5), ipiv[1] - inches(1.5 + k), 0], inches(0.31), W - inches(2), 'z', M.cf(), intake.group, 10);
@@ -135,7 +135,7 @@ export const r1678: BuiltinRobot = {
     kit.limelight([-L / 2 - inches(0.4), H - inches(4), 0], Math.PI);
     kit.led('led', [-L / 2 + inches(8), y0 + inches(1), W / 2 + inches(0.1)], [inches(10), inches(0.6), 0.006], LIME);
 
-    rig.joint({ id: 'intake', type: 'revolute', driver: 'intake-deploy', pivot: ipiv, axis: [0, 0, 1], stowed: 130, active: 0, speed: 560 }, intake.group);
+    rig.joint({ id: 'intake', type: 'revolute', driver: 'intake-deploy', pivot: ipiv, axis: [0, 0, 1], stowed: intake.deployAngleDeg + 95, active: 0, speed: 560 }, intake.group);
     rig.joint({ id: 'intake_roll', type: 'spin', driver: 'intake-roller', parent: 'intake', pivot: intake.rollerCenter, axis: [0, 0, 1], speed: 2000 }, intake.roller);
     if (intake.kickerNode) rig.joint({ id: 'intake_kick', type: 'spin', driver: 'intake-roller', parent: 'intake', pivot: intake.kickerCenter!, axis: [0, 0, -1], speed: 2400 }, intake.kickerNode);
     rig.joint({ id: 'floor', type: 'spin', driver: 'indexer', pivot: [fx(0), y0 + inches(0.9), 0], axis: [0, 0, 1], speed: 1500 }, 'floor_dead_0');

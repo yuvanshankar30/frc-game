@@ -139,7 +139,7 @@ export const r2910: BuiltinRobot = {
 
     // ---------- slap-down intake: billet side plates, 2x2 bash bar over the 2in roller, two 1.25in lower rollers
     const ipiv: [number, number, number] = [L / 2 - inches(1.5), y0 + inches(7), 0];
-    const intake = groundIntake(kit, 'intake', { pivot: [ipiv[0], ipiv[1]], rollerX: L / 2 + inches(4) + inches(4.5), rollerR: inches(1), width: W, roller: 'silicone', wheel: 0x2a2d33, armColor: 0xb9bec5, kicker: true, deflector: false });
+    const intake = groundIntake(kit, 'intake', { bumper: { face: L / 2 + inches(4), top: inches(2.56) + inches(5.5) }, pivot: [ipiv[0], ipiv[1]], rollerX: L / 2 + inches(4) + inches(4.5), rollerR: inches(1), width: W, roller: 'silicone', wheel: 0x2a2d33, armColor: 0xb9bec5, kicker: true, deflector: false });
     intakeGearbox(kit, 'intake', [ipiv[0], ipiv[1]], W / 2 - inches(2));
     kit.box('bash_bar', [intake.rollerCenter[0] - inches(0.5), intake.rollerCenter[1] + inches(2.4), 0], [inches(2), inches(2), W - inches(0.6)], M.tube(), intake.group);
     kit.tubeRoller('intake_lower2', intake.rollerCenter[0] - inches(5.5), inches(2.6), -W / 2 + inches(1.5), W / 2 - inches(1.5), inches(0.625), 0x2a2d33, intake.group);
@@ -147,7 +147,7 @@ export const r2910: BuiltinRobot = {
     kit.limelight([L / 2 - inches(3), H - inches(2), 0], 0);
     kit.led('led', [-L / 2 + inches(0.4), inches(14), 0], [0.006, inches(0.6), W - inches(6)], GREEN);
 
-    rig.joint({ id: 'intake', type: 'revolute', driver: 'intake-deploy', pivot: ipiv, axis: [0, 0, 1], stowed: 114.3, active: 0, speed: 600 }, intake.group);
+    rig.joint({ id: 'intake', type: 'revolute', driver: 'intake-deploy', pivot: ipiv, axis: [0, 0, 1], stowed: intake.deployAngleDeg + 95, active: 0, speed: 600 }, intake.group);
     rig.joint({ id: 'intake_roll', type: 'spin', driver: 'intake-roller', parent: 'intake', pivot: intake.rollerCenter, axis: [0, 0, 1], speed: 2200 }, intake.roller);
     if (intake.kickerNode) rig.joint({ id: 'intake_kick', type: 'spin', driver: 'intake-roller', parent: 'intake', pivot: intake.kickerCenter!, axis: [0, 0, -1], speed: 2400 }, intake.kickerNode);
     rig.joint({ id: 'hopper_ext', type: 'prismatic', driver: 'intake-deploy', pivot: [0, 0, 0], axis: [1, 0, 0], stowed: -inches(6), active: 0, speed: 0.6 }, hop);
