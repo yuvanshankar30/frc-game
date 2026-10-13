@@ -39,7 +39,7 @@ export const r4414: BuiltinRobot = {
     author: 'HighTide',
     color: '#1a9e9a',
     description:
-      'The 2026 champion. Structural bumpers double as smoked hopper walls on a teal truss. A rack-driven intake latches out to open a carbon-fiber hopper box that holds 85+ FUEL. The Dye Rotor single-streams FUEL up a spiral hook into an A-frame turret with a 3in flywheel that shoots on the move.',
+      'The 2026 champion. Structural bumpers double as smoked hopper walls on a teal truss. A rack-driven intake slides out from under a carbon-fiber hopper box that holds 85+ FUEL and latches there. The Dye Rotor single-streams FUEL up a spiral hook into an A-frame turret with a 3in flywheel that shoots on the move.',
     highlights: ['2026 World Champion (Daly captain)', 'Latching rack intake + 85+ FUEL hopper', 'Dye Rotor → single stream ~14 BPS', '55.7:1 turret, 4× X44 flywheel, SOTM', 'Fits under the TRENCH', 'No climber'],
     sources: ['4414 2026 Technical Binder: 2026.team4414.com (CAD renders, Dye Rotor V10, Shooter V11, subsystem notes)', 'Chief Delphi: Team 4414 HighTide 2026 Tech Binder (RIPCURRENT)'],
     frame: { length: L, width: W, height: H, mass: 60, comHeight: 0.17, bumperThickness: inches(3.5), bumperHeight: inches(5.5) },
@@ -127,31 +127,37 @@ export const r4414: BuiltinRobot = {
     kit.pocketPlate('deck_arm', [-inches(3.5), deckY, 0], inches(4), W - inches(1), { color: DARK, plane: 'xz', cell: inches(2), rib: inches(0.35) });
     kit.pocketPlate('deck_spine', [-L / 2 + inches(4), deckY, -inches(1.5)], inches(6), inches(9), { color: DARK, plane: 'xz', cell: inches(2), rib: inches(0.35) });
 
-    // ---------- sliding intake + extending carbon-fiber hopper box (on 10DP racks through the bumper gaps)
-    // Stowed, the box's front face is flush with the front bumper; it rides ABOVE the bumper and the rollers hang
-    // in front of the bumper face at carpet height. Deploying slides everything EXT forward and it latches out.
+    // ---------- carbon-fiber hopper box + sliding intake (on 10DP racks through the bumper gaps)
+    // The black box above the bumper is fixed to the robot. Only the intake slides: its low side plates, the two
+    // rollers and the racks ride out EXT from under the box on deploy and latch there, so the rollers sit ahead of the
+    // box at the carpet.
     const slide = kit.group('slide');
     const bt = inches(3.5); // bumper thickness
     const bumperTop = inches(2.5) + inches(5.5);
     const face = L / 2 + bt; // front bumper face
     const bx0 = L / 2 - inches(5); // box rear edge (inside the frame, overlaps the walls when stowed)
     const boxTop = wallTop - inches(0.6);
-    // One continuous CF side plate per side: the hopper-box wall above the bumper, dropping in front of the bumper
-    // face to carry the rollers at the carpet, with a slanted front edge over the intake mouth.
-    // The extension is a plain black box: solid CF sides from the carpet to the top of the hopper, a vertical front
-    // panel above the mouth, and the rollers tucked low under it.
+    // The box: solid CF sides from the bumper top to the top of the hopper and a vertical front panel over the mouth.
     const mainC: [number, number, number] = [face + inches(3), inches(2.6), 0];
     const botC: [number, number, number] = [face + inches(4.4), inches(1.05), 0];
     const mouthTop = bumperTop + inches(1.5); // FUEL rolls in under the front panel
     const nose = face + inches(5.3);
     const sidePts: [number, number][] = [
       [bx0, bumperTop + inches(0.3)],
-      [face + inches(0.3), bumperTop + inches(0.3)],
-      [face + inches(0.3), inches(0.9)],
-      [nose - inches(0.8), inches(0.6)],
-      [nose, inches(1.6)],
+      [nose, bumperTop + inches(0.3)],
       [nose, boxTop],
       [bx0, boxTop],
+    ];
+    // The intake's own side plates (sliding): from the carpet up into the box, carrying the roller bearings.
+    const plateTop = bumperTop + inches(2);
+    const plateBack = face + inches(0.3);
+    const plateFront = nose + inches(0.4);
+    const platePts: [number, number][] = [
+      [plateBack, plateTop],
+      [plateBack, inches(0.9)],
+      [plateFront - inches(0.8), inches(0.6)],
+      [plateFront, inches(1.6)],
+      [plateFront, plateTop],
     ];
     const zs = W / 2 - inches(0.25);
     for (const s of [-1, 1]) {
@@ -162,10 +168,17 @@ export const r4414: BuiltinRobot = {
       sh.closePath();
       const geo = new THREE.ExtrudeGeometry(sh, { depth: inches(0.12), bevelEnabled: false });
       geo.translate(0, 0, z - inches(0.06));
-      kit.add(new THREE.Mesh(geo, M.cf()), `ext_side_${s}`, slide);
+      kit.add(new THREE.Mesh(geo, M.cf()), `ext_side_${s}`);
+      const ps = new THREE.Shape();
+      ps.moveTo(platePts[0][0], platePts[0][1]);
+      for (const q of platePts.slice(1)) ps.lineTo(q[0], q[1]);
+      ps.closePath();
+      const pg = new THREE.ExtrudeGeometry(ps, { depth: inches(0.12), bevelEnabled: false });
+      pg.translate(0, 0, z - s * inches(0.35) - inches(0.06));
+      kit.add(new THREE.Mesh(pg, M.cf()), `intake_plate_${s}`, slide);
       // Riveted aluminum edge angle along the bottom of the box section + the slanted nose edge.
-      kit.box(`ext_angle_bot_${s}`, [(bx0 + face) / 2, bumperTop + inches(0.6), z - s * inches(0.35)], [face - bx0, inches(0.6), inches(0.6)], M.anodBlack(), slide);
-      kit.box(`ext_angle_nose_${s}`, [nose - inches(0.35), (mouthTop + boxTop) / 2, z - s * inches(0.35)], [inches(0.6), boxTop - mouthTop, inches(0.6)], M.anodBlack(), slide);
+      kit.box(`ext_angle_bot_${s}`, [(bx0 + face) / 2, bumperTop + inches(0.6), z - s * inches(0.35)], [face - bx0, inches(0.6), inches(0.6)], M.anodBlack());
+      kit.box(`ext_angle_nose_${s}`, [nose - inches(0.35), (mouthTop + boxTop) / 2, z - s * inches(0.35)], [inches(0.6), boxTop - mouthTop, inches(0.6)], M.anodBlack());
       // Roller bearings (flanged) on the plate.
       for (const [c, r] of [
         [mainC, inches(0.55)],
@@ -189,9 +202,9 @@ export const r4414: BuiltinRobot = {
       kit.pulley(`rack_pinion_${s}`, [L / 2 - inches(3), inches(6.2), rz], inches(0.6), { color: 0x2a2c31 });
     }
     // Vertical CF front panel over the intake mouth and the box floor.
-    kit.box('ext_front', [nose - inches(0.05), (mouthTop + boxTop) / 2, 0], [inches(0.1), boxTop - mouthTop, 2 * zs], M.cf(), slide);
-    kit.box('ext_front_lip', [nose - inches(0.3), mouthTop, 0], [inches(0.6), inches(0.5), 2 * zs], M.anodBlack(), slide);
-    kit.box('ext_floor', [(bx0 + face) / 2, bumperTop + inches(0.3), 0], [face - bx0, inches(0.12), 2 * zs - inches(0.2)], dark, slide);
+    kit.box('ext_front', [nose - inches(0.05), (mouthTop + boxTop) / 2, 0], [inches(0.1), boxTop - mouthTop, 2 * zs], M.cf());
+    kit.box('ext_front_lip', [nose - inches(0.3), mouthTop, 0], [inches(0.6), inches(0.5), 2 * zs], M.anodBlack());
+    kit.box('ext_floor', [(bx0 + face) / 2, bumperTop + inches(0.3), 0], [face - bx0, inches(0.12), 2 * zs - inches(0.2)], dark);
     // 3in main roller + 1.5in bottom roller (X44 1.5:1) low between the plates, dark grip tubing.
     const mainRoller = kit.tubeRoller('intake_main', mainC[0], mainC[1], -zs, zs, inches(1.5), 0x34383f, slide);
     const botRoller = kit.tubeRoller('intake_bottom', botC[0], botC[1], -zs, zs, inches(0.75), 0x2a2d33, slide);
@@ -307,7 +320,7 @@ export const r4414: BuiltinRobot = {
     kit.camera('cam_front', [L / 2 - inches(1), H - inches(1.5), W / 2 - inches(3)], 0);
     kit.camera('cam_back', [-L / 2 + inches(1), H - inches(1.5), -W / 2 + inches(3)], Math.PI);
 
-    rig.joint({ id: 'slide', type: 'prismatic', driver: 'intake-deploy', pivot: [0, 0, 0], axis: [1, 0, 0], stowed: 0, active: EXT, speed: 1.4 }, slide);
+    rig.joint({ id: 'slide', type: 'prismatic', driver: 'intake-deploy', pivot: [0, 0, 0], axis: [1, 0, 0], stowed: 0, active: EXT, speed: 0.8 }, slide);
     rig.joint({ id: 'roll_main', type: 'spin', driver: 'intake-roller', parent: 'slide', pivot: mainC, axis: [0, 0, 1], speed: 2200 }, mainRoller);
     rig.joint({ id: 'roll_bot', type: 'spin', driver: 'intake-roller', parent: 'slide', pivot: botC, axis: [0, 0, 1], speed: 2600 }, botRoller);
     rig.joint({ id: 'rotor', type: 'spin', driver: 'indexer', pivot: [ROTOR[0], 0, ROTOR[2]], axis: [0, 1, 0], speed: 810 }, rotor);

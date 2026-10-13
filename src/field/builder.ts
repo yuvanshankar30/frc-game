@@ -118,11 +118,12 @@ export class StaticBuilder {
   }
 
   /** Convex hull collider + mesh from points. */
-  hull(points: THREE.Vector3[], color: number | string, phys: Mat) {
+  /** Convex collider through `points`. `filter`: the groups it collides with (default everything). */
+  hull(points: THREE.Vector3[], color: number | string, phys: Mat, filter = ALL) {
     const flat = new Float32Array(points.flatMap((p) => [p.x, p.y, p.z]));
     const desc = RAPIER.ColliderDesc.convexHull(flat);
     if (desc) {
-      desc.setFriction(phys.friction).setRestitution(phys.restitution).setCollisionGroups(groups(GROUP.FIELD, ALL));
+      desc.setFriction(phys.friction).setRestitution(phys.restitution).setCollisionGroups(groups(GROUP.FIELD, filter));
       this.world.createCollider(desc, this.body);
     }
     return color;

@@ -379,9 +379,28 @@ export class Field {
     pad.position.copy(T.p(wallX + DEPOT.depth / 2, 0.004, z0));
     pad.receiveShadow = true;
     this.root.add(pad);
-    b.box(T.p(wallX + DEPOT.depth - bw / 2, bh / 2, z0), { x: bw, y: bh, z: DEPOT.width }, { color, phys: MATERIAL.steel });
+    // Barriers: 1in bars that keep FUEL in the DEPOT. Robots roll over them (bumpers ride 2.5in up and a 4in wheel
+    // barely notices a 1in lip), so they only collide with FUEL; as solid steps they wedged a wheel up whenever a
+    // robot hit the wall beside the DEPOT, pitching it ~15°. The sloped ridge rolls loose balls back in.
+    const ridge = (cx: number, cz: number, alongX: boolean, len: number) => {
+      const half = bw / 2 + inches(1.5);
+      const top = bw / 2 - inches(0.6);
+      const pts: THREE.Vector3[] = [];
+      for (const e of [-len / 2, len / 2])
+        for (const [w, y] of [
+          [-half, 0],
+          [half, 0],
+          [-top, bh],
+          [top, bh],
+        ] as const)
+          pts.push(alongX ? T.p(cx + e, y, cz + w) : T.p(cx + w, y, cz + e));
+      b.hull(pts, color, MATERIAL.steel, GROUP.FUEL);
+    };
+    b.box(T.p(wallX + DEPOT.depth - bw / 2, bh / 2, z0), { x: bw, y: bh, z: DEPOT.width }, { color, phys: null });
+    ridge(wallX + DEPOT.depth - bw / 2, z0, false, DEPOT.width);
     for (const s of [-1, 1]) {
-      b.box(T.p(wallX + DEPOT.depth / 2, bh / 2, z0 + s * (DEPOT.width / 2 - bw / 2)), { x: DEPOT.depth, y: bh, z: bw }, { color, phys: MATERIAL.steel });
+      b.box(T.p(wallX + DEPOT.depth / 2, bh / 2, z0 + s * (DEPOT.width / 2 - bw / 2)), { x: DEPOT.depth, y: bh, z: bw }, { color, phys: null });
+      ridge(wallX + DEPOT.depth / 2, z0 + s * (DEPOT.width / 2 - bw / 2), true, DEPOT.depth);
     }
     return { alliance: side, center: T.p(wallX + DEPOT.depth / 2, 0, z0) };
   }
