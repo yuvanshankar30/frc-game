@@ -80,7 +80,7 @@ export const r4414: BuiltinRobot = {
     const base = swerveBase(kit, rig, L, W, { electronics: [-inches(5), -W / 2 + inches(4.5)] });
     const y0 = base.railTop;
     const dark = mat(DARK, { metal: 0.45, rough: 0.45 });
-    const smoke = M.smokeLight();
+    const smoke = M.smoke();
 
     // ---------- drivetrain: teal pre-drilled tube with chamfered corners + rotor cross rails
     const tealTube = mat(TEAL, { metal: 0.5, rough: 0.4 });
@@ -100,21 +100,26 @@ export const r4414: BuiltinRobot = {
     const CH = inches(3); // rear chamfer
     for (const s of [-1, 1]) {
       kit.box('wall_side', [inches(1.5) - CH / 2, wy, s * (W / 2 + inches(0.15))], [L - CH - inches(3), wallH, inches(0.1)], smoke);
-      // teal truss along the top edge + vertical members
-      kit.pocketPlate('truss_top', [inches(1.5) - CH / 2, wallTop - inches(0.9), s * (W / 2 + inches(0.3))], L - CH - inches(3), inches(1.8), { color: TEAL, cell: inches(1.6), rib: inches(0.28) });
-      kit.pocketPlate('truss_mid', [-inches(2.5), wy, s * (W / 2 + inches(0.3))], inches(1.8), wallH, { color: TEAL, cell: inches(1.6), rib: inches(0.28) });
+      // Teal top rail along the wall edge, a truss post mid-wall.
+      kit.box('wall_rail_top', [inches(1.5) - CH / 2, wallTop - inches(0.35), s * (W / 2 + inches(0.3))], [L - CH - inches(3), inches(0.7), inches(0.5)], tealTube);
+      kit.truss('truss_mid', [-inches(3.4), y0, s * (W / 2 + inches(0.32))], [-inches(1.6), y0, s * (W / 2 + inches(0.32))], wallH, { color: TEAL, member: inches(0.32) });
       // carbon-fiber end plate where the extension slides in
       kit.panel('cf_end', [L / 2 - inches(2.6), wy, s * (W / 2 + inches(0.32))], inches(3.2), wallH, M.cf());
-      // chamfered rear corner panel + vertical truss
+      // Chamfered rear corner: smoked panel framed by a full-height teal truss tower (the look of the binder renders).
       const cx = -L / 2 + CH / 2 - inches(0.3);
       const cz = s * (W / 2 - CH / 2 + inches(0.3));
       const cp = kit.box('wall_chamfer', [cx, wy, cz], [CH * 1.41, wallH, inches(0.1)], smoke);
       cp.rotation.y = s * Math.PI * 0.25;
-      const ct = kit.pocketPlate('truss_chamfer', [cx, wy, cz], CH * 1.41, wallH, { color: TEAL, cell: inches(1.6), rib: inches(0.28) });
-      ct.rotation.y = s * Math.PI * 0.25;
+      const ca: [number, number, number] = [-L / 2 - inches(0.35), y0, s * (W / 2 - CH)];
+      const cb: [number, number, number] = [-L / 2 + CH, y0, s * (W / 2 + inches(0.35))];
+      kit.truss('truss_chamfer', ca, cb, wallH, { color: TEAL, member: inches(0.32) });
+      kit.truss('truss_corner_back', [-L / 2 - inches(0.35), y0, s * (W / 2 - CH - inches(3.2))], ca, wallH, { color: TEAL, member: inches(0.32) });
+      kit.truss('truss_corner_side', cb, [-L / 2 + CH + inches(3.2), y0, s * (W / 2 + inches(0.35))], wallH, { color: TEAL, member: inches(0.32) });
     }
+    // Green status LED strip along the top of the left wall.
+    kit.led('led_strip', [inches(1.5) - CH / 2, wallTop + inches(0.1), -(W / 2 + inches(0.3))], [L - CH - inches(3), inches(0.25), inches(0.3)], 0x39ff5a);
     kit.box('wall_back', [-L / 2 - inches(0.15), wy, 0], [inches(0.1), wallH, W - 2 * CH], smoke);
-    kit.pocketPlate('truss_back', [-L / 2 - inches(0.3), wallTop - inches(0.9), 0], W - 2 * CH, inches(1.8), { color: TEAL, cell: inches(1.6), rib: inches(0.28), plane: 'zy' });
+    kit.box('wall_rail_back', [-L / 2 - inches(0.3), wallTop - inches(0.35), 0], [inches(0.5), inches(0.7), W - 2 * CH], tealTube);
     // Sponsor print on the smoked walls ("fabworks" on the CAD) + name plate.
     for (const s of [-1, 1]) {
       kit.sponsors(`sponsors_${s}`, [-inches(2), wy - inches(1.5), s * (W / 2 + inches(0.22))], L * 0.55, wallH * 0.38, ['fabworks', 'HAAS', 'Google', 'HighTide 4414'], 'xy', s as 1 | -1, undefined, '#c9d2d8');

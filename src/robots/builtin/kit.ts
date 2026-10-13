@@ -242,6 +242,76 @@ function pocketedRectShape(w: number, h: number, rib: number, cell: number) {
   return s;
 }
 
+/**
+ * Isogrid plate: an outline (polygon, CCW, plate-local) pocketed with a grid of equilateral triangles separated by
+ * ribs, the dense "lattice" look of modern machined FRC side plates. Pockets that would cut within `rib` of the
+ * outline are skipped, so the border stays solid.
+ */
+function isogridShape(outline: [number, number][], rib: number, cell: number) {
+  const s = new THREE.Shape();
+  outline.forEach(([x, y], k) => (k ? s.lineTo(x, y) : s.moveTo(x, y)));
+  s.closePath();
+  const inside = (x: number, y: number) => {
+    let c = false;
+    for (let i = 0, j = outline.length - 1; i < outline.length; j = i++) {
+      const [xi, yi] = outline[i];
+      const [xj, yj] = outline[j];
+      if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) c = !c;
+    }
+    return c;
+  };
+  const edgeDist = (x: number, y: number) => {
+    let d = Infinity;
+    for (let i = 0, j = outline.length - 1; i < outline.length; j = i++) {
+      const [ax, ay] = outline[j];
+      const [bx, by] = outline[i];
+      const ex = bx - ax;
+      const ey = by - ay;
+      const t = Math.max(0, Math.min(1, ((x - ax) * ex + (y - ay) * ey) / (ex * ex + ey * ey || 1)));
+      d = Math.min(d, Math.hypot(x - ax - ex * t, y - ay - ey * t));
+    }
+    return d;
+  };
+  const xs = outline.map((p) => p[0]);
+  const ys = outline.map((p) => p[1]);
+  const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
+  const h = (cell * Math.sqrt(3)) / 2;
+  for (let row = 0; y0 + row * h < y1; row++) {
+    const yb = y0 + row * h;
+    const shift = row % 2 ? cell / 2 : 0;
+    for (let k = -1; x0 + k * (cell / 2) < x1 + cell; k++) {
+      const up = (k + (row % 2)) % 2 === 0;
+      const xc = x0 - shift + (k * cell) / 2 + cell / 2;
+      // Grid triangle vertices, then shrink toward the centroid.
+      const tri: [number, number][] = up
+        ? [
+            [xc - cell / 2, yb],
+            [xc + cell / 2, yb],
+            [xc, yb + h],
+          ]
+        : [
+            [xc - cell / 2, yb + h],
+            [xc, yb],
+            [xc + cell / 2, yb + h],
+          ];
+      const cx = (tri[0][0] + tri[1][0] + tri[2][0]) / 3;
+      const cy = (tri[0][1] + tri[1][1] + tri[2][1]) / 3;
+      const r = h / 3; // inradius of the grid triangle
+      if (r <= rib / 2 + 0.002) continue;
+      const f = (r - rib / 2) / r;
+      const pts = tri.map(([x, y]) => [cx + (x - cx) * f, cy + (y - cy) * f] as [number, number]);
+      if (!pts.every(([x, y]) => inside(x, y) && edgeDist(x, y) > rib)) continue;
+      const path = new THREE.Path();
+      // Holes wind opposite to the outline.
+      const ordered = up ? [pts[0], pts[2], pts[1]] : [pts[0], pts[1], pts[2]];
+      ordered.forEach(([x, y], i) => (i ? path.lineTo(x, y) : path.moveTo(x, y)));
+      path.closePath();
+      s.holes.push(path);
+    }
+  }
+  return s;
+}
+
 /** Hood sector gear: pie slice with teeth on the arc and pocketed interior. */
 function sectorShape(r: number, a0: number, a1: number, teeth: number) {
   const s = new THREE.Shape();
@@ -345,6 +415,79 @@ export class Kit {
   pocketPlate(name: string, c: V3, w: number, h: number, opts: { t?: number; color?: number; plane?: 'xy' | 'zy' | 'xz'; rib?: number; cell?: number; parent?: THREE.Object3D } = {}) {
     const shape = pocketedRectShape(w, h, opts.rib ?? inches(0.5), opts.cell ?? inches(3));
     return this.extrude(name, shape, opts.t ?? inches(0.25), machined(opts.color ?? ALU_PLATE), opts.plane ?? 'xy', c, opts.parent);
+  }
+
+  /**
+   * Machined isogrid ("lattice") plate. `outline` is plate-local (w × h centered on c when omitted); plane as for
+   * pocketPlate. Bright bare aluminum by default.
+   */
+  latticePlate(
+    name: string,
+    c: V3,
+    w: number,
+    h: number,
+    opts: { t?: number; color?: number; plane?: 'xy' | 'zy' | 'xz'; rib?: number; cell?: number; outline?: [number, number][]; parent?: THREE.Object3D } = {},
+  ) {
+    const outline = opts.outline ?? [
+      [-w / 2, -h / 2],
+      [w / 2, -h / 2],
+      [w / 2, h / 2],
+      [-w / 2, h / 2],
+    ];
+    const shape = isogridShape(outline, opts.rib ?? inches(0.22), opts.cell ?? inches(1.6));
+    return this.extrude(name, shape, opts.t ?? inches(0.19), machined(opts.color ?? ALU_PLATE), opts.plane ?? 'xy', c, opts.parent);
+  }
+
+  /**
+   * Welded/riveted truss panel between two points in a vertical plane: top and bottom chords, posts every `bay` and a
+   * zig-zag of diagonals. a/b are the bottom chord ends (robot frame); the panel rises `h`. Bays run along the longer
+   * side (a narrow, tall panel becomes a tower); `bay` defaults to square bays.
+   */
+  truss(name: string, a: V3, b: V3, h: number, opts: { bay?: number; rows?: number; member?: number; color?: number; parent?: THREE.Object3D } = {}) {
+    const g = this.group(name, opts.parent);
+    const m = opts.member ?? inches(0.5);
+    const material = machined(opts.color ?? ALU_PLATE);
+    const dx = b[0] - a[0];
+    const dz = b[2] - a[2];
+    const len = Math.hypot(dx, dz);
+    const at = (u: number, y: number): V3 => [a[0] + (dx * u) / len, a[1] + y, a[2] + (dz * u) / len];
+    const bar = (p: V3, q: V3) => {
+      const v = new THREE.Vector3(q[0] - p[0], q[1] - p[1], q[2] - p[2]);
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(v.length() + m, m, m), material);
+      mesh.position.set((p[0] + q[0]) / 2, (p[1] + q[1]) / 2, (p[2] + q[2]) / 2);
+      mesh.quaternion.setFromUnitVectors(new THREE.Vector3(1, 0, 0), v.normalize());
+      this.add(mesh, `${name}_bar`, g);
+    };
+    if (h > len) {
+      // Tall and narrow (a tower): vertical chords, rungs and diagonals stacked up the height.
+      const bays = Math.max(1, Math.round(h / (opts.bay ?? Math.max(len, inches(2)))));
+      bar(at(m / 2, 0), at(m / 2, h));
+      bar(at(len - m / 2, 0), at(len - m / 2, h));
+      for (let k = 0; k <= bays; k++) bar(at(0, (h * k) / bays), at(len, (h * k) / bays));
+      for (let k = 0; k < bays; k++) {
+        const y0 = (h * k) / bays;
+        const y1 = (h * (k + 1)) / bays;
+        if (k % 2) bar(at(m, y0), at(len - m, y1));
+        else bar(at(len - m, y0), at(m, y1));
+      }
+      return g;
+    }
+    // Long panel: chords, then `rows` stacked Warren rows (diagonals alternate, posts at each bay).
+    const rows = Math.max(1, opts.rows ?? 1);
+    const rh = h / rows;
+    const bays = Math.max(1, Math.round(len / (opts.bay ?? Math.max(rh, inches(2)))));
+    for (let r = 0; r <= rows; r++) bar(at(0, Math.min(h - m / 2, Math.max(m / 2, r * rh))), at(len, Math.min(h - m / 2, Math.max(m / 2, r * rh))));
+    for (let k = 0; k <= bays; k++) bar(at((len * k) / bays, 0), at((len * k) / bays, h));
+    for (let r = 0; r < rows; r++)
+      for (let k = 0; k < bays; k++) {
+        const u0 = (len * k) / bays;
+        const u1 = (len * (k + 1)) / bays;
+        const lo = r * rh + m;
+        const hi = (r + 1) * rh - m;
+        if ((k + r) % 2) bar(at(u0, lo), at(u1, hi));
+        else bar(at(u0, hi), at(u1, lo));
+      }
+    return g;
   }
 
   /**

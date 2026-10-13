@@ -122,9 +122,12 @@ AUTO FUEL, grace window included, starts SHIFT 1 inactive.
 
 ## Sound
 
-Field cues are synthesized: the "Charge!" start, the AUTO-end buzzer, TELEOP bells, shift chimes, the END GAME
-whistle and the final buzzer. Robot loops follow the drivetrain, flywheel, intake and indexer. To use real
-recordings, drop files into `public/sfx/`. The file names are listed in `public/sfx/README.md`.
+The only sounds are the FRC field cues and FUEL dropping around the arena; robots make no motor noise.
+- **Field cues:** the field sound files from Team 254's [Cheesy Arena](https://github.com/Team254/cheesy-arena)
+  field software (`static/audio`), played at the same points as its 2026 timing: start, AUTO end, TELEOP start,
+  each shift change, END GAME warning and match end. They live in `public/sfx/` (see its README).
+- **Ball drops:** each real FUEL bounce makes a soft foam thud, quieter and more muffled with distance from the
+  camera, with arena reverb.
 
 ## Project layout
 

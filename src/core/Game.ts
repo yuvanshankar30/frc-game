@@ -143,7 +143,6 @@ export class Game {
   }
 
   private lastPhase: Phase = 'pre';
-  private lastSpeed = 0;
   /** Seconds left in the pre-match countdown (match modes). */
   private countdown = 0;
   private lastCount = 0;
@@ -165,10 +164,6 @@ export class Game {
       const r = this.allRobots().find((x) => x.id === shooter);
       if (r) r.stats.scored++;
     }
-    if (this.players.some((p) => p.robot.id === shooter)) {
-      if (pts > 0) sfx.score();
-      else sfx.wasted();
-    }
   }
 
   private onPhaseChange(from: Phase, to: Phase) {
@@ -181,22 +176,21 @@ export class Game {
     switch (to) {
       case 'pause':
         this.showBanner('AUTO COMPLETE — ROBOTS DISABLED', this.match.autoTeleopGap);
-        sfx.buzzer('autoEnd');
+        sfx.autoEnd();
         break;
       case 'transition':
         this.showBanner('TELEOP — TRANSITION SHIFT', 2.5);
-        sfx.bells();
+        sfx.teleop();
         break;
       case 'shift': {
         const active = this.match.isHubActive('blue') ? 'BLUE' : 'RED';
         this.showBanner(`SHIFT ${this.match.shift} — ${active} HUB ACTIVE`, 2.5);
-        const mine = this.players[0]?.robot.alliance;
-        sfx.chime(mine ? this.match.isHubActive(mine) : true);
+        sfx.shift();
         break;
       }
       case 'endgame':
         this.showBanner('END GAME — BOTH HUBS ACTIVE', 2.5);
-        sfx.whistle();
+        sfx.endgame();
         break;
       case 'post': {
         for (const a of ['blue', 'red'] as const) {
@@ -209,7 +203,7 @@ export class Game {
           rp: { blue: rankingPoints(this.match.score.blue, this.match.score.red), red: rankingPoints(this.match.score.red, this.match.score.blue) },
         };
         this.showBanner('MATCH OVER', 3);
-        sfx.buzzer();
+        sfx.end();
         break;
       }
     }
@@ -290,18 +284,10 @@ export class Game {
       if (steps === 6) this.acc = 0;
     }
 
-    // Robot sounds (local player 1) + impacts.
-    const p0 = this.players[0];
-    if (p0) {
-      const enabled = !this.paused && (this.config.mode === 'practice' || (this.match.running && this.match.phase !== 'pause'));
-      const v = p0.robot.body.linvel();
-      const speed = Math.hypot(v.x, v.z);
-      sfx.updateRobot({ speed, maxSpeed: p0.robot.def.drivetrain.maxSpeed, spin: p0.robot.spin, intake: p0.robot.intakeOn, feeding: p0.robot.feeding, enabled });
-      const dv = this.lastSpeed - speed;
-      if (dv > 1.6 && !this.paused) sfx.impact(Math.min(1, dv / 4));
-      this.lastSpeed = speed;
-    }
-    if (this.paused) sfx.stopLoops();
+    // FUEL bouncing around the arena, heard from player 1's camera.
+    const drops = this.field.fuel.drops;
+    if (this.players[0] && !this.paused) sfx.ballDrops(drops, this.players[0].rig.camera.position);
+    drops.length = 0;
 
     // Render.
     for (const r of this.allRobots()) r.sync();
@@ -324,17 +310,12 @@ export class Game {
       // Robots are disabled during the pre-match countdown, the AUTO→TELEOP pause and after the match.
       const enabled = this.config.mode === 'practice' || (running && this.match.phase !== 'pause');
       const cmd = enabled ? cmds[i] : idleCommand();
-      const shooting = cmd.shoot;
       const before = p.robot.stats.shots;
-      const intakedBefore = p.robot.stats.intaked;
       p.robot.step(cmd, { field: this.field, auto, assist: p.assist, headingHold: this.config.settings.headingHold }, dt);
       if (p.robot.stats.shots > before) {
-        if (shooting) sfx.shoot();
         for (let k = before; k < p.robot.stats.shots; k++) p.shotTimes.push(this.time);
         while (p.shotTimes.length && this.time - p.shotTimes[0] > 2) p.shotTimes.shift();
       }
-      if (p.robot.stats.intaked > intakedBefore) sfx.intake();
-      if (cmd.climb && p.robot.climb !== 'none') sfx.climb();
     });
     this.field.step(dt);
     this.world.step();
@@ -344,7 +325,6 @@ export class Game {
       if (n !== this.lastCount && n >= 1 && n <= 3) {
         this.lastCount = n;
         this.showBanner(`${n}`, 0.9);
-        sfx.countdown(false);
       }
       if (this.countdown <= 0) {
         this.countdown = 0;
@@ -352,7 +332,7 @@ export class Game {
         this.matchStart = this.time;
         this.lastPhase = 'auto';
         this.showBanner('AUTO', 2);
-        sfx.charge();
+        sfx.start();
       }
     }
     if (this.config.mode !== 'practice') {
@@ -460,7 +440,6 @@ export class Game {
 
   dispose() {
     this.disposed = true;
-    sfx.stopLoops();
     cancelAnimationFrame(this.raf);
     this.resizeObs.disconnect();
     this.renderer.dispose();

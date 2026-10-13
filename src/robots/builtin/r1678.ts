@@ -97,7 +97,7 @@ export const r1678: BuiltinRobot = {
     kit.motor('floor_motor', [fx(3), y0 - inches(1.3), W / 2 - inches(3)], 'y');
 
     // ---------- shooter tower: 3/16in plates 25in apart, ball tunnel, feeder, drum + 3 hood rollers, hood sector
-    for (const s of [-1, 1]) kit.pocketPlate(`shooter_plate${s}`, [-L / 2 + inches(4.5), inches(11.5), s * inches(12.5)], inches(10), inches(20), { color: 0xc5cbd2, t: inches(0.1875), cell: inches(2.2), rib: inches(0.3) });
+    for (const s of [-1, 1]) kit.latticePlate(`shooter_plate${s}`, [-L / 2 + inches(4.5), inches(11.5), s * inches(12.5)], inches(10), inches(20), { color: 0xc5cbd2, t: inches(0.1875), cell: inches(1.7), rib: inches(0.22) });
     kit.box('tunnel_backing', [-L / 2 + inches(8.5), inches(12), 0], [inches(0.25), inches(16), inches(24.5)], white);
     const tunnel = kit.group('ball_tunnel');
     for (let k = 0; k < 5; k++) kit.tubeRoller(`backing_${k}`, -L / 2 + inches(7.6) - k * inches(0.3), inches(6.5 + k * 2.4), -inches(12), inches(12), inches(0.62), 0x2a2d33, tunnel);

@@ -40,7 +40,7 @@ const EXT = inches(8); // hopper slide-out past the frame when the intake is dow
 const ALU = 0xa9b0b8;
 const SPONSORS = ['WCP', 'Qualcomm', 'J&J', 'Apple', 'INTUITIVE', 'Google', 'NASA', 'In Memory of Zach Marks', 'The Mintz Family'];
 
-const hopperPanel = () => mat(0xb9c0c8, { opacity: 0.32, rough: 0.08 });
+const hopperPanel = () => mat(0xc9d0d8, { opacity: 0.28, rough: 0.06 });
 
 /** Flat panel from a polygon in the XY plane (robot side walls), at depth z. */
 function polyPanel(kit: Kit, name: string, pts: [number, number][], z: number, material: THREE.Material, parent?: THREE.Object3D) {
@@ -53,15 +53,15 @@ function polyPanel(kit: Kit, name: string, pts: [number, number][], z: number, m
   return kit.add(m, name, parent);
 }
 
-/** Black hole-punched edge rail between two points (XY at depth z). */
+/** Hole-punched aluminum edge rail between two points (XY at depth z). */
 function edgeRail(kit: Kit, name: string, a: [number, number], b: [number, number], z: number, parent?: THREE.Object3D) {
   const dx = b[0] - a[0];
   const dy = b[1] - a[1];
   const len = Math.hypot(dx, dy);
-  const m = kit.box(name, [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, z], [len, inches(0.7), inches(0.7)], M.anodBlack(), parent);
+  const m = kit.box(name, [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, z], [len, inches(0.7), inches(0.7)], M.alu(), parent);
   m.rotation.z = Math.atan2(dy, dx);
   const n = Math.floor(len / inches(1.5));
-  const hole = mat(0x0a0a0b, { rough: 1 });
+  const hole = mat(0x3a3e44, { rough: 1 });
   for (let k = 1; k < n; k++) {
     const t = k / n;
     kit.cyl(`${name}_hole${k}`, [a[0] + dx * t, a[1] + dy * t, z + Math.sign(z || 1) * inches(0.36)], inches(0.1), inches(0.02), 'z', hole, parent, 6);
@@ -205,9 +205,10 @@ export const r971: BuiltinRobot = {
     const dh = DECK - y0;
     for (const s of [-1, 1]) {
       const z = s * (W / 2 - inches(0.6));
-      xPanel(kit, `deck_side${s}`, [dmx, y0 + dh / 2, z], dw, dh, 'xy');
+      // Dense isogrid side plates under the turrets (bright machined aluminum, as on the robot).
+      kit.latticePlate(`deck_side${s}`, [dmx, y0 + dh / 2, z], dw, dh, { cell: inches(1.35), rib: inches(0.18), t: inches(0.19) });
       kit.pocketPlate(`deck_rail${s}`, [dmx, DECK - inches(0.6), z + s * inches(0.1)], dw, inches(1.2), { color: ALU, cell: inches(0.9), rib: inches(0.22), t: inches(0.1) });
-      xPanel(kit, `deck_rear${s}`, [dx0, y0 + dh / 2, s * (W / 4 + inches(1))], W / 2 - inches(3), dh, 'zy');
+      kit.latticePlate(`deck_rear${s}`, [dx0, y0 + dh / 2, s * (W / 4 + inches(1))], W / 2 - inches(3), dh, { cell: inches(1.35), rib: inches(0.18), t: inches(0.19), plane: 'zy' });
     }
     kit.pocketPlate('deck_rail_rear', [dx0 - inches(0.1), DECK - inches(0.6), 0], W - inches(1.2), inches(1.2), { color: ALU, cell: inches(0.9), rib: inches(0.22), t: inches(0.1), plane: 'zy' });
     kit.pocketPlate('deck_rail_front', [DECK_X1, DECK - inches(0.6), 0], W - inches(1.2), inches(1.2), { color: ALU, cell: inches(0.9), rib: inches(0.22), t: inches(0.1), plane: 'zy' });
@@ -231,8 +232,8 @@ export const r971: BuiltinRobot = {
       // Gray X-frame stiffener on the hopper wall (CAD).
       xPanel(kit, `hopper_x${s}`, [(BOX_X0 + BOX_X1) / 2 + inches(0.5), y0 + inches(7), s * (hz - inches(0.3))], inches(3.6), inches(5.4), 'xy');
     }
-    kit.box('hopper_top_x0', [BOX_X0 + step, HOP_TOP, 0], [inches(0.7), inches(0.7), 2 * hz], M.anodBlack());
-    kit.box('hopper_top_x1', [BOX_X0, backTop, 0], [inches(0.7), inches(0.7), 2 * hz], M.anodBlack());
+    kit.box('hopper_top_x0', [BOX_X0 + step, HOP_TOP, 0], [inches(0.7), inches(0.7), 2 * hz], M.alu());
+    kit.box('hopper_top_x1', [BOX_X0, backTop, 0], [inches(0.7), inches(0.7), 2 * hz], M.alu());
     // Back panel down to the deck (FUEL rolls toward the separator).
     kit.box('hopper_back', [BOX_X0 - inches(0.4), (DECK + backTop) / 2 + inches(0.5), 0], [0.003, backTop - DECK, 2 * hz], hopperPanel(), undefined, [0, 0, 0.12]);
 
@@ -262,7 +263,7 @@ export const r971: BuiltinRobot = {
       kit.add(gm, `ext_guide${s}`, hop);
     }
     kit.box('ext_front', [ex1, (eyb + inches(1.5) + HOP_TOP) / 2, 0], [0.003, HOP_TOP - eyb - inches(1.5), 2 * hz - inches(0.8)], hopperPanel(), hop);
-    kit.box('ext_front_rail', [ex1, HOP_TOP, 0], [inches(0.7), inches(0.7), 2 * hz - inches(0.8)], M.anodBlack(), hop);
+    kit.box('ext_front_rail', [ex1, HOP_TOP, 0], [inches(0.7), inches(0.7), 2 * hz - inches(0.8)], M.alu(), hop);
     kit.box('ext_floor', [(ex0 + ex1) / 2, eyb + inches(0.75), 0], [ex1 - ex0, inches(0.08), 2 * hz - inches(1)], hopperPanel(), hop, [0, 0, Math.atan2(inches(1.5), ex1 - ex0)]);
     const topRoller = kit.tubeRoller('top_roller', ex1 - inches(1.5), HOP_TOP - inches(1.4), -hz + inches(1.2), hz - inches(1.2), inches(0.7), 0xb8bec5, hop);
 

@@ -290,20 +290,87 @@ export class Robot {
     const lv = this.body.linvel();
     if (from) {
       const local = this.toLocal(from);
-      const target = this.entryPoint(local.z);
-      target.x -= this.hopper.entrySide * 0.12;
+      // The intake throws each ball over the pile onto the lowest spot, so the hopper fills back to front and
+      // all the way up instead of jamming at the entry wall.
+      const target = this.fillTarget(fuel, local.z) ?? this.entryPoint(local.z);
       const tw = this.toWorld(target, new THREE.Vector3());
       const T = 0.22;
       const v = new THREE.Vector3((tw.x - from.x) / T + lv.x, (tw.y - from.y) / T + 0.5 * 9.81 * T, (tw.z - from.z) / T + lv.z);
       fuel.store(i, from, v);
-      // Fly through the intake/bumper (no collisions) until it's inside the hopper volume.
+      // Fly through the intake/bumper (no collisions) until it reaches its spot in the hopper.
       fuel.colliders[i].setCollisionGroups(groups(GROUP.STORED, 0));
       this.entering.set(i, 0);
-      this.enterTarget.set(i, target.clone());
+      this.enterTarget.set(i, target);
     } else {
       fuel.store(i, this.toWorld(this.entryPoint(0)), { x: lv.x, y: 0, z: lv.z });
     }
     this.stored.push(i);
+  }
+
+  /**
+   * Where a new ball would come to rest in the hopper: for candidate spots on a fine grid over the floor, the
+   * height its center settles at on top of the carried FUEL (balls still flying in count as landed at their
+   * target). Robot frame.
+   */
+  private restSpots(fuel: FuelSystem) {
+    const { center: c, size: s } = this.hopper;
+    const r = FUEL.radius;
+    const d = FUEL.diameter;
+    const x0 = c.x - s.x / 2 + r;
+    const z0 = c.z - s.z / 2 + r;
+    const nx = Math.max(1, Math.round((s.x - d) / (d * 0.33)) + 1);
+    const nz = Math.max(1, Math.round((s.z - d) / (d * 0.33)) + 1);
+    const sx = nx > 1 ? (s.x - d) / (nx - 1) : 0;
+    const sz = nz > 1 ? (s.z - d) / (nz - 1) : 0;
+    const balls: number[] = [];
+    const lp = new THREE.Vector3();
+    for (const i of this.stored) {
+      const tgt = this.enterTarget.get(i);
+      if (tgt) balls.push(tgt.x, tgt.y - 0.03, tgt.z);
+      else {
+        this.toLocal(fuel.position(i), lp);
+        balls.push(lp.x, lp.y, lp.z);
+      }
+    }
+    const rest = new Float32Array(nx * nz);
+    const floor = c.y - s.y / 2 + r;
+    for (let iz = 0; iz < nz; iz++)
+      for (let ix = 0; ix < nx; ix++) {
+        const x = s.x > d ? x0 + ix * sx : c.x;
+        const z = s.z > d ? z0 + iz * sz : c.z;
+        let y = floor;
+        for (let k = 0; k < balls.length; k += 3) {
+          const h2 = (balls[k] - x) ** 2 + (balls[k + 2] - z) ** 2;
+          if (h2 < d * d) y = Math.max(y, balls[k + 1] + Math.sqrt(d * d - h2));
+        }
+        rest[ix + nx * iz] = y;
+      }
+    const at = (k: number) => new THREE.Vector3(s.x > d ? x0 + (k % nx) * sx : c.x, rest[k], s.z > d ? z0 + Math.floor(k / nx) * sz : c.z);
+    return { rest, nx, at, ceiling: c.y + s.y / 2 + (this.def.storage.net?.stretch ?? 0) };
+  }
+
+  /** Robot-frame point just above the lowest resting spot (null when no spot has room for another ball). */
+  private fillTarget(fuel: FuelSystem, z: number) {
+    const { rest, nx, at, ceiling } = this.restSpots(fuel);
+    const r = FUEL.radius;
+    const entrySide = this.hopper.entrySide;
+    let best = -1;
+    let bestScore = Infinity;
+    for (let k = 0; k < rest.length; k++) {
+      if (rest[k] + r > ceiling + 0.02) continue;
+      const ix = k % nx;
+      // Lowest first; among near-equals prefer the far end (fill back to front) and the ball's own lane.
+      const fromEntry = entrySide > 0 ? nx - 1 - ix : ix;
+      const score = rest[k] - fromEntry * 0.002 + Math.abs(at(k).z - z) * 0.01 + Math.random() * 0.006;
+      if (score < bestScore) {
+        bestScore = score;
+        best = k;
+      }
+    }
+    if (best < 0) return null;
+    const p = at(best);
+    p.y = Math.min(ceiling - r, p.y + 0.03);
+    return p;
   }
 
   /** Fill the hopper with `n` balls packed on its floor (preloads / refills). */
@@ -369,7 +436,8 @@ export class Robot {
       const lp = this.toLocal(fuel.position(i));
       const tgt = this.enterTarget.get(i);
       const inside =
-        (Math.abs(lp.x - c.x) < s.x / 2 - r && Math.abs(lp.y - c.y) < s.y / 2 - r && Math.abs(lp.z - c.z) < s.z / 2 - r) || (!!tgt && lp.distanceTo(tgt) < 0.05);
+        (!!tgt && lp.distanceTo(tgt) < 0.05) ||
+        (t > 0.3 && Math.abs(lp.x - c.x) < s.x / 2 - r && Math.abs(lp.y - c.y) < s.y / 2 - r && Math.abs(lp.z - c.z) < s.z / 2 - r);
       if (inside || t > 0.6 || fuel.state[i] !== 'stored') {
         if (fuel.state[i] === 'stored') {
           if (inside) fuel.colliders[i].setCollisionGroups(groups(GROUP.STORED, GROUP.HOPPER | GROUP.STORED));
@@ -521,19 +589,16 @@ export class Robot {
 
   private entryCheckT = 0;
   private entryBlockedCache = false;
-  /** True when several carried balls already sit at the entry slot (checked a few times a second). */
+  /** True when the hopper is physically packed to the roof (checked a few times a second). */
   private entryBlocked(fuel: FuelSystem) {
     if (--this.entryCheckT > 0) return this.entryBlockedCache;
-    this.entryCheckT = 12;
-    const e = this.entryPoint(0);
-    const R = FUEL.diameter * 1.1;
-    let n = 0;
-    for (const i of this.stored) {
-      const lp = this.toLocal(fuel.position(i));
-      if (Math.abs(lp.x - e.x) < R && Math.abs(lp.y - e.y) < R * 1.2) n++;
-    }
-    const lanes = Math.max(1, Math.floor(this.hopper.size.z / FUEL.diameter));
-    this.entryBlockedCache = n >= lanes;
+    this.entryCheckT = 6;
+    const { rest, ceiling } = this.restSpots(fuel);
+    let low = Infinity;
+    for (const h of rest) low = Math.min(low, h);
+    // Only when even the lowest spot is level with the roof: below that, the pile still squeezes a new ball into
+    // the gaps underneath its top layer (being strict here capped hoppers at ~80% of their real capacity).
+    this.entryBlockedCache = low > ceiling;
     return this.entryBlockedCache;
   }
 
@@ -602,6 +667,7 @@ export class Robot {
     } else {
       this.stepDrive(cmd, ctx, dt);
     }
+    this.stepSway(dt);
     this.stepMechanisms(cmd, ctx, dt);
   }
 
@@ -653,7 +719,17 @@ export class Robot {
     const share = grounded / this.wheelPositions.length;
     const speed = Math.hypot(cur.vx, cur.vz);
     const motor = d.maxAccel * Math.max(0.2, 1 - speed / (d.maxSpeed * 1.15));
-    const aMax = Math.min(MU * 9.81, motor) * share;
+    let aMax = Math.min(MU * 9.81, motor) * share;
+    // Swerve modules have to steer before they can push in a new direction: they turn at a finite rate (either
+    // way round, since a module can drive backwards) and grip in the new direction ramps in as they line up.
+    if (d.type === 'swerve' && Math.hypot(next.vx, next.vz) > 0.15) {
+      const want = Math.atan2(next.vz, next.vx);
+      let err = wrapAngle(want - this.moduleAngle);
+      if (err > Math.PI / 2) err -= Math.PI;
+      else if (err < -Math.PI / 2) err += Math.PI;
+      this.moduleAngle = wrapAngle(this.moduleAngle + clamp(err, -MODULE_STEER_RATE * dt, MODULE_STEER_RATE * dt));
+      aMax *= Math.max(0.2, Math.cos(err));
+    }
     const c = Math.cos(heading);
     const s = Math.sin(heading);
     const dvx = next.vx - cur.vx;
@@ -670,6 +746,38 @@ export class Robot {
     const alphaMax = Math.min(d.maxAlpha, (MU * 9.81 * m * rw) / Iy) * share;
     const dw = clamp(next.omega - av.y, -alphaMax * dt, alphaMax * dt);
     this.body.applyTorqueImpulse({ x: 0, y: Iy * dw, z: 0 }, true);
+  }
+
+  /** Robot-frame heading the swerve modules currently point (rad; a module driving backwards is the same). */
+  private moduleAngle = 0;
+  /** Visual chassis sway: pitch / roll (rad) and their rates, a spring driven by the robot's acceleration. */
+  private sway = { pitch: 0, roll: 0, vp: 0, vr: 0, bob: 0, lastVx: 0, lastVz: 0 };
+
+  /**
+   * The chassis rocks on its tires and bumpers: it squats back under acceleration, dips its nose braking, leans out
+   * in turns and jolts on hits; the carpet adds a speed-dependent rumble. Cosmetic only (the physics body stays
+   * flat); applied to the visual in sync().
+   */
+  private stepSway(dt: number) {
+    const lv = this.body.linvel();
+    const v = referenceToRobot(lv.x, lv.z, this.yaw);
+    const w = this.sway;
+    const ax = clamp((v.vx - w.lastVx) / dt, -40, 40);
+    const az = clamp((v.vz - w.lastVz) / dt, -40, 40);
+    w.lastVx = v.vx;
+    w.lastVz = v.vz;
+    const K = 0.0016; // rad per m/s² of acceleration
+    const OMEGA = 22;
+    const ZETA = 0.32;
+    const speed = Math.hypot(v.vx, v.vz);
+    const rumble = this.grounded > 0 ? Math.min(1, speed / Math.max(1, this.def.drivetrain.maxSpeed)) : 0;
+    const tp = clamp(ax * K, -0.05, 0.05) + (Math.random() - 0.5) * 0.006 * rumble;
+    const tr = clamp(-az * K, -0.05, 0.05) + (Math.random() - 0.5) * 0.006 * rumble;
+    w.vp += (OMEGA * OMEGA * (tp - w.pitch) - 2 * ZETA * OMEGA * w.vp) * dt;
+    w.vr += (OMEGA * OMEGA * (tr - w.roll) - 2 * ZETA * OMEGA * w.vr) * dt;
+    w.pitch += w.vp * dt;
+    w.roll += w.vr * dt;
+    w.bob = (Math.random() - 0.5) * 0.002 * rumble;
   }
 
   /** Number of wheels touching something (field or another robot) below them. */
@@ -963,10 +1071,12 @@ export class Robot {
         if (Math.abs((this.turretYaw[b] ?? 0) - a.yaw) > tol) return false;
       }
     } else {
-      // Fixed shooter: fire whenever the heading (led for robot motion and spin) points the shooter at the HUB,
-      // including while the robot is still rotating through the target.
+      // Fixed shooter: fire once the heading (led for robot motion) points the shooter at the HUB and the robot has
+      // nearly stopped turning. Firing mid-swing flings the ball sideways with the spin of the chassis (a wide
+      // rear drum is ~0.4 m off-center: 4 m/s of sideways velocity at full rotation speed).
       const e = this.robotAimError(ctx);
       if (e === null || Math.abs(e) > tol * 1.4) return false;
+      if (Math.abs(this.body.angvel().y) > 1.5) return false;
     }
     if (sh.hoodMin !== null && Math.abs(this.hoodAngle - aim.barrels[0].elev / DEG) > 4) return false;
     return true;
@@ -1145,12 +1255,14 @@ export class Robot {
 
   // ---------------------------------------------------------------- render
 
-  /** Copy the physics pose to the visual. */
+  private swayEuler = new THREE.Euler();
+  /** Copy the physics pose (plus the cosmetic chassis sway) to the visual. */
   sync() {
     const t = this.body.translation();
     const r = this.body.rotation();
-    this.visual.position.set(t.x, t.y, t.z);
-    this.visual.quaternion.set(r.x, r.y, r.z, r.w);
+    const w = this.sway;
+    this.visual.position.set(t.x, t.y + w.bob, t.z);
+    this.visual.quaternion.set(r.x, r.y, r.z, r.w).multiply(this.tmpQ.setFromEuler(this.swayEuler.set(w.roll, 0, w.pitch)));
     if (this.net && this.fuel) this.net.update(this.stored.map((i) => this.toLocal(this.fuel!.position(i))));
     // Swerve modules: steer visuals if the model tagged them (optional, cosmetic).
     if (this.def.drivetrain.type === 'swerve') {
@@ -1190,6 +1302,8 @@ interface AimResult {
 }
 
 const ONE = new THREE.Vector3(1, 1, 1);
+/** Swerve module azimuth rate (rad/s): a quarter turn in ~0.1 s, like a Kraken-steered MK4/MK5 module. */
+const MODULE_STEER_RATE = 15;
 
 function smooth(t: number) {
   return t * t * (3 - 2 * t);

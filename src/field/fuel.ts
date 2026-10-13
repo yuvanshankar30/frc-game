@@ -21,6 +21,10 @@ export class FuelSystem {
   readonly lastShooter: (string | null)[] = [];
   /** Time when this ball was launched (for CCD toggling). */
   private shotAt: number[] = [];
+  /** Vertical velocity of each ball last step (bounce detection for sound). */
+  private lastVy: Float32Array;
+  /** Loose-FUEL bounces since the last drain: world position and impact speed (m/s). For the audio. */
+  readonly drops: { x: number; y: number; z: number; speed: number }[] = [];
   private tmpM = new THREE.Matrix4();
   private tmpQ = new THREE.Quaternion();
   private tmpP = new THREE.Vector3();
@@ -32,6 +36,7 @@ export class FuelSystem {
     readonly capacity: number,
     scene: THREE.Object3D,
   ) {
+    this.lastVy = new Float32Array(capacity);
     const geo = new THREE.SphereGeometry(FUEL.radius, 14, 10);
     const mat = new THREE.MeshStandardMaterial({ color: 0xf2c418, roughness: 0.85, metalness: 0 });
     this.mesh = new THREE.InstancedMesh(geo, mat, capacity);
@@ -85,6 +90,8 @@ export class FuelSystem {
     b.setDominanceGroup(0);
     this.lastShooter[i] = shooter;
     this.colliders[i].setCollisionGroups(FIELD_GROUPS);
+    this.colliders[i].setFriction(MATERIAL.fuel.friction);
+    this.colliders[i].setRestitution(MATERIAL.fuel.restitution);
     this.bodies[i].setLinearDamping(FUEL_AIR_DAMPING);
     this.bodies[i].enableCcd(false);
     this.ghostUntil[i] = -1;
@@ -110,6 +117,10 @@ export class FuelSystem {
     b.setAngvel({ x: 0, y: 0, z: 0 }, true);
     b.setLinearDamping(0.6);
     this.colliders[i].setCollisionGroups(STORED_GROUPS);
+    // Squishy foam settles into the gaps of a pile as the robot drives: low friction and no bounce let carried
+    // FUEL pack as densely as a real hopper (~0.6) instead of stacking in loose columns.
+    this.colliders[i].setFriction(0.02);
+    this.colliders[i].setRestitution(0);
     b.setDominanceGroup(ROBOT_DOMINANCE);
     this.state[i] = 'stored';
     this.ghostUntil[i] = -1;
@@ -174,6 +185,18 @@ export class FuelSystem {
       if (this.shotAt[i] >= 0 && this.time - this.shotAt[i] > 3) {
         this.bodies[i].enableCcd(false);
         this.shotAt[i] = -1;
+      }
+      // A falling ball whose vertical speed suddenly reverses just hit something: queue a drop sound.
+      if (this.state[i] !== 'field') {
+        this.lastVy[i] = 0;
+        continue;
+      }
+      const vy = this.bodies[i].linvel().y;
+      const prev = this.lastVy[i];
+      this.lastVy[i] = vy;
+      if (prev < -1.2 && vy - prev > 1.5 && this.drops.length < 64) {
+        const t = this.bodies[i].translation();
+        this.drops.push({ x: t.x, y: t.y, z: t.z, speed: -prev });
       }
     }
   }

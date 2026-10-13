@@ -86,8 +86,8 @@ export const r254: BuiltinRobot = {
     // ---------- rear shooter: stacked pocketed plates, full-width drum, hood + stacked hood rollers, gears + belts
     const SX = -L / 2 + inches(3.6);
     for (const s of [-1, 1]) {
-      kit.pocketPlate(`shooter_plate${s}`, [SX, inches(11.5), s * (W / 2 - inches(0.4))], inches(10), inches(20), { color: BLK, cell: inches(2), rib: inches(0.3) });
-      kit.pocketPlate(`shooter_plate_out${s}`, [SX - inches(0.5), inches(12.5), s * (W / 2 + inches(0.3))], inches(8), inches(17), { color: BLK, cell: inches(2.4), rib: inches(0.3) });
+      kit.latticePlate(`shooter_plate${s}`, [SX, inches(11.5), s * (W / 2 - inches(0.4))], inches(10), inches(20), { color: BLK, cell: inches(1.7), rib: inches(0.22) });
+      kit.latticePlate(`shooter_plate_out${s}`, [SX - inches(0.5), inches(12.5), s * (W / 2 + inches(0.3))], inches(8), inches(17), { color: BLK, cell: inches(1.9), rib: inches(0.22) });
     }
     const drumC: [number, number, number] = [-L / 2 + inches(2.6), inches(16.5), 0];
     const drum = kit.drum('drum', drumC[0], drumC[1], W - inches(1.6), inches(2.3));

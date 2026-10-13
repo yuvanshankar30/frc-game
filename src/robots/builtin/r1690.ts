@@ -68,14 +68,15 @@ export const r1690: BuiltinRobot = {
     const base = swerveBase(kit, rig, L, W, { electronics: [inches(4), -inches(6)] });
     const y0 = base.railTop;
 
-    // ---------- dark pocketed X-truss perimeter walls + clear inner panels
+    // ---------- triangulated aluminum truss perimeter walls + clear inner panels
     const wallH = H - y0 - inches(2.5);
     const wy = y0 + wallH / 2;
     for (const s of [-1, 1]) {
-      kit.pocketPlate(`wall_truss_${s}`, [-inches(1), wy, s * (W / 2 - inches(0.3))], L - inches(4), wallH, { color: DARK, cell: inches(4), rib: inches(0.45) });
+      const z = s * (W / 2 - inches(0.3));
+      kit.truss(`wall_truss_${s}`, [-L / 2 + inches(1), y0, z], [L / 2 - inches(3), y0, z], wallH, { color: DARK, member: inches(0.4), rows: 2 });
       kit.box(`wall_poly_${s}`, [-inches(1), wy, s * (W / 2 - inches(0.55))], [L - inches(4), wallH, 0.003], M.polycarb());
     }
-    kit.pocketPlate('wall_truss_back', [-L / 2 + inches(0.4), wy, 0], W - inches(1), wallH, { color: DARK, cell: inches(4), rib: inches(0.45), plane: 'zy' });
+    kit.truss('wall_truss_back', [-L / 2 + inches(0.4), y0, -W / 2 + inches(0.5)], [-L / 2 + inches(0.4), y0, W / 2 - inches(0.5)], wallH, { color: DARK, member: inches(0.4), rows: 2 });
     // Curved pocketed arch over the top (front-to-back), carrying the turret.
     const arch = new THREE.Shape();
     const R0 = inches(13);

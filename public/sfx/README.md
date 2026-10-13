@@ -1,17 +1,17 @@
-# Field sound overrides
+# Field sounds
 
-FRC Sim synthesizes every field cue. To use real recordings instead, drop audio files here with these names
-(`.mp3`, `.ogg` or `.wav`). Any file that's missing falls back to the built-in synthesized cue.
+The FRC field cues, from Team 254's Cheesy Arena field software
+([static/audio](https://github.com/Team254/cheesy-arena/tree/main/static/audio)), mapped the way its 2026 timing
+(`game/match_sounds.go`) plays them. Replace any file to change a cue (`.mp3`, `.ogg` or `.wav`); a missing file falls
+back to a short synthesized tone.
 
-| File            | Played when                                   |
-|-----------------|-----------------------------------------------|
-| `match-start`   | AUTO starts (the "Charge!" fanfare)           |
-| `auto-end`      | AUTO ends, robots disabled                    |
-| `teleop-start`  | TELEOP starts (three bells)                   |
-| `shift`         | Each HUB shift change                         |
-| `endgame`       | END GAME starts (train whistle)               |
-| `match-end`     | Match ends (buzzer)                           |
-| `countdown`     | Each pre-match countdown beep                 |
+| File            | Cheesy Arena file   | Played when                                |
+|-----------------|---------------------|--------------------------------------------|
+| `match-start`   | `start.wav`         | AUTO starts (0:00)                         |
+| `match-end`     | `end.wav`           | AUTO ends, and the match ends              |
+| `teleop-start`  | `resume.wav`        | TELEOP starts                              |
+| `shift`         | `shift_change.wav`  | Each HUB shift change                      |
+| `endgame`       | `warning.wav`       | END GAME starts (30 s left)                |
 
-Only use recordings you have the rights to (e.g. your own field recordings). The official FIRST field sounds are
-FIRST's property and aren't bundled here.
+The field sounds are FIRST's; they're included for this private, non-commercial project the same way Cheesy Arena
+redistributes them.

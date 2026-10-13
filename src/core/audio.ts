@@ -1,35 +1,41 @@
 /**
- * FRC-style field cues and continuous robot mechanism sounds. Everything is synthesized by default; any field cue can
- * be replaced by a recording dropped into `public/sfx/` (see SAMPLE_FILES and public/sfx/README.md).
+ * Arena audio: the official FRC field cues plus FUEL dropping around the field. No robot motor sounds.
  *
- * Field cues follow a real FRC match: "Charge!" fanfare at the start, a buzzer when AUTO ends, three bells
- * when TELEOP starts, a steam whistle for END GAME, and a buzzer at the end of the match.
- * Robot loops are driven every frame from robot state (drive speed, flywheel spin, intake, indexer).
+ * Field cues are the FRC field sounds as shipped with Team 254's Cheesy Arena field software (static/audio), played at
+ * the same points in a REBUILT match (game/match_sounds.go): the "charge" start sound at 0:00, the end buzzer when
+ * AUTO ends, the resume bell when TELEOP starts, the shift-change tone at each HUB shift, the warning when END GAME
+ * starts and the end buzzer at 0:00. Files live in public/sfx/ (see SAMPLE_FILES and public/sfx/README.md); a missing
+ * file falls back to a short synthesized tone.
+ *
+ * Ball drops are soft foam thuds triggered by real FUEL bounces, quieter, duller and later the farther they are from
+ * the camera, with a little arena reverb.
  */
 /** Field cue → file name (without extension) looked up in public/sfx/. mp3, ogg or wav. */
 export const SAMPLE_FILES = {
   start: 'match-start',
-  autoEnd: 'auto-end',
+  autoEnd: 'match-end',
   teleop: 'teleop-start',
   shift: 'shift',
   endgame: 'endgame',
   end: 'match-end',
-  countdown: 'countdown',
 } as const;
 type Cue = keyof typeof SAMPLE_FILES;
 
+/** Speed of sound (m/s): far drops arrive a little late. */
+const SOUND_SPEED = 343;
+
 class AudioEngine {
-  private samples: Partial<Record<Cue, AudioBuffer>> = {};
+  private samples: Partial<Record<string, AudioBuffer>> = {};
   private samplesLoaded = false;
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
-  private sfxBus: GainNode | null = null;
   private fieldBus: GainNode | null = null;
-  private loopBus: GainNode | null = null;
+  private dropBus: GainNode | null = null;
+  private reverb: ConvolverNode | null = null;
   volume = 0.6;
-  private last = new Map<string, number>();
-  private loops: Record<string, { osc: OscillatorNode[]; gain: GainNode; filter?: BiquadFilterNode; src?: AudioBufferSourceNode }> = {};
   private noiseBuf: AudioBuffer | null = null;
+  private dropBudget = 0;
+  private dropT = 0;
 
   private ensure() {
     if (!this.ctx) {
@@ -40,14 +46,17 @@ class AudioEngine {
         comp.ratio.value = 4;
         this.master = this.ctx.createGain();
         this.master.connect(comp).connect(this.ctx.destination);
-        this.sfxBus = this.ctx.createGain();
         this.fieldBus = this.ctx.createGain();
-        this.loopBus = this.ctx.createGain();
-        this.sfxBus.connect(this.master);
         this.fieldBus.connect(this.master);
-        this.loopBus.connect(this.master);
-        this.loopBus.gain.value = 0.55;
-        this.fieldBus.gain.value = 0.9;
+        this.dropBus = this.ctx.createGain();
+        this.dropBus.gain.value = 0.8;
+        this.dropBus.connect(this.master);
+        // Arena reverb: a big, soft room (decaying noise impulse response).
+        this.reverb = this.ctx.createConvolver();
+        this.reverb.buffer = this.impulse(this.ctx, 1.6);
+        const wet = this.ctx.createGain();
+        wet.gain.value = 0.35;
+        this.reverb.connect(wet).connect(this.master);
       } catch {
         return null;
       }
@@ -61,17 +70,27 @@ class AudioEngine {
     return this.ctx;
   }
 
-  /** Load any recordings present in public/sfx/ (missing files fall back to the synthesized cue). */
+  private impulse(ctx: AudioContext, secs: number) {
+    const len = Math.floor(ctx.sampleRate * secs);
+    const buf = ctx.createBuffer(2, len, ctx.sampleRate);
+    for (let ch = 0; ch < 2; ch++) {
+      const d = buf.getChannelData(ch);
+      for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3);
+    }
+    return buf;
+  }
+
+  /** Load the field recordings in public/sfx/ (each file once, even if several cues share it). */
   private async loadSamples(ctx: AudioContext) {
     const base = `${import.meta.env.BASE_URL ?? '/'}sfx/`;
     await Promise.all(
-      (Object.keys(SAMPLE_FILES) as Cue[]).map(async (cue) => {
+      [...new Set(Object.values(SAMPLE_FILES))].map(async (name) => {
         for (const ext of ['mp3', 'ogg', 'wav']) {
           try {
-            const res = await fetch(`${base}${SAMPLE_FILES[cue]}.${ext}`);
+            const res = await fetch(`${base}${name}.${ext}`);
             // The dev server answers unknown paths with index.html, so require an audio content type.
             if (!res.ok || !(res.headers.get('content-type') ?? '').startsWith('audio')) continue;
-            this.samples[cue] = await ctx.decodeAudioData(await res.arrayBuffer());
+            this.samples[name] = await ctx.decodeAudioData(await res.arrayBuffer());
             return;
           } catch {
             // try the next extension
@@ -81,29 +100,34 @@ class AudioEngine {
     );
   }
 
-  /** Play a recorded cue if one was provided. Returns false to fall back to synthesis. */
-  private sample(cue: Cue) {
-    const buf = this.samples[cue];
-    const ctx = this.ctx;
-    if (!buf || !ctx) return false;
-    const src = ctx.createBufferSource();
-    src.buffer = buf;
-    src.connect(this.fieldBus!);
-    src.start();
-    return true;
-  }
-
-  private gate(key: string, minGap: number) {
-    const now = performance.now();
-    if ((this.last.get(key) ?? 0) + minGap * 1000 > now) return false;
-    this.last.set(key, now);
-    return true;
+  /** Play a field cue: the recording, or a short synthesized stand-in if it's missing / still loading. */
+  private cue(cue: Cue, fallback: number) {
+    const ctx = this.ensure();
+    if (!ctx) return;
+    const buf = this.samples[SAMPLE_FILES[cue]];
+    if (buf) {
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      src.connect(this.fieldBus!);
+      src.start();
+      return;
+    }
+    const t = ctx.currentTime + 0.02;
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = 'square';
+    o.frequency.value = fallback;
+    g.gain.setValueAtTime(0.06, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.8);
+    o.connect(g).connect(this.fieldBus!);
+    o.start(t);
+    o.stop(t + 0.85);
   }
 
   private noise() {
     const ctx = this.ctx!;
     if (!this.noiseBuf) {
-      const len = ctx.sampleRate * 2;
+      const len = ctx.sampleRate;
       this.noiseBuf = ctx.createBuffer(1, len, ctx.sampleRate);
       const d = this.noiseBuf.getChannelData(0);
       for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
@@ -113,306 +137,99 @@ class AudioEngine {
     return s;
   }
 
-  /** Enveloped oscillator note. */
-  private note(bus: GainNode, type: OscillatorType, freq: number, t0: number, dur: number, gain: number, opts: { attack?: number; slideTo?: number; vibrato?: number; filter?: number } = {}) {
-    const ctx = this.ctx!;
-    const o = ctx.createOscillator();
-    o.type = type;
-    o.frequency.setValueAtTime(freq, t0);
-    if (opts.slideTo) o.frequency.exponentialRampToValueAtTime(opts.slideTo, t0 + dur);
-    let node: AudioNode = o;
-    if (opts.vibrato) {
-      const lfo = ctx.createOscillator();
-      const lg = ctx.createGain();
-      lfo.frequency.value = 5.5;
-      lg.gain.value = opts.vibrato;
-      lfo.connect(lg).connect(o.frequency);
-      lfo.start(t0);
-      lfo.stop(t0 + dur + 0.1);
-    }
-    if (opts.filter) {
-      const f = ctx.createBiquadFilter();
-      f.type = 'lowpass';
-      f.frequency.value = opts.filter;
-      node.connect(f);
-      node = f;
-    }
-    const g = ctx.createGain();
-    const a = opts.attack ?? 0.01;
-    g.gain.setValueAtTime(0.0001, t0);
-    g.gain.exponentialRampToValueAtTime(gain, t0 + a);
-    g.gain.setValueAtTime(gain, t0 + Math.max(a, dur * 0.7));
-    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-    node.connect(g).connect(bus);
-    o.start(t0);
-    o.stop(t0 + dur + 0.05);
-  }
-
-  private burst(bus: GainNode, t0: number, dur: number, gain: number, type: BiquadFilterType, freq: number, q = 1) {
-    const ctx = this.ctx!;
-    const s = this.noise();
-    const f = ctx.createBiquadFilter();
-    f.type = type;
-    f.frequency.value = freq;
-    f.Q.value = q;
-    const g = ctx.createGain();
-    g.gain.setValueAtTime(gain, t0);
-    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-    s.connect(f).connect(g).connect(bus);
-    s.start(t0, Math.random());
-    s.stop(t0 + dur + 0.05);
-  }
-
   // ------------------------------------------------------------- field cues
 
-  /** Match start: bugle "Charge!" (G4 C5 E5 G5 … E5 G5). */
-  charge() {
+  /** AUTO starts (0:00). */
+  start() {
+    this.cue('start', 520);
+  }
+  /** AUTO ends, robots disabled. */
+  autoEnd() {
+    this.cue('autoEnd', 140);
+  }
+  /** TELEOP starts. */
+  teleop() {
+    this.cue('teleop', 880);
+  }
+  /** HUB shift change. */
+  shift() {
+    this.cue('shift', 660);
+  }
+  /** END GAME starts (30 s left). */
+  endgame() {
+    this.cue('endgame', 440);
+  }
+  /** Match over. */
+  end() {
+    this.cue('end', 140);
+  }
+
+  // ------------------------------------------------------------- FUEL drops
+
+  /**
+   * FUEL bounces since last frame (world positions, impact speed m/s), heard from `ear`. The loudest few per frame
+   * are played; a busy field becomes a soft patter in the distance.
+   */
+  ballDrops(drops: readonly { x: number; y: number; z: number; speed: number }[], ear: { x: number; y: number; z: number }) {
+    if (!drops.length) return;
     const ctx = this.ensure();
-    if (!ctx || this.sample('start')) return;
-    const t = ctx.currentTime + 0.05;
-    const seq: [number, number, number][] = [
-      [392, 0, 0.16],
-      [523.3, 0.17, 0.16],
-      [659.3, 0.34, 0.16],
-      [784, 0.51, 0.36],
-      [659.3, 0.9, 0.14],
-      [784, 1.06, 0.9],
-    ];
-    for (const [f, dt, d] of seq) {
-      this.note(this.fieldBus!, 'sawtooth', f, t + dt, d, 0.16, { attack: 0.025, vibrato: dt > 1 ? 6 : 0, filter: 2600 });
-      this.note(this.fieldBus!, 'square', f / 2, t + dt, d, 0.05, { attack: 0.02, filter: 1200 });
+    if (!ctx || ctx.state !== 'running') return;
+    // At most ~30 drops a second, refilled over time.
+    const now = ctx.currentTime;
+    this.dropBudget = Math.min(6, this.dropBudget + (now - this.dropT) * 30);
+    this.dropT = now;
+    const heard = drops
+      .map((d) => {
+        const dist = Math.hypot(d.x - ear.x, d.y - ear.y, d.z - ear.z);
+        return { dist, loud: Math.min(1, d.speed / 6) / (1 + dist / 2.5) };
+      })
+      .sort((a, b) => b.loud - a.loud);
+    for (const h of heard) {
+      if (this.dropBudget < 1 || h.loud < 0.01) break;
+      this.dropBudget -= 1;
+      this.drop(now + h.dist / SOUND_SPEED + Math.random() * 0.01, h.loud, h.dist);
     }
   }
 
-  /** AUTO / match end buzzer. */
-  buzzer(cue: 'autoEnd' | 'end' = 'end') {
-    const ctx = this.ensure();
-    if (!ctx || this.sample(cue)) return;
-    const t = ctx.currentTime + 0.02;
-    for (const f of [92, 138, 185]) this.note(this.fieldBus!, 'square', f, t, 1.6, 0.09, { attack: 0.01, filter: 1800 });
-    this.burst(this.fieldBus!, t, 1.6, 0.05, 'bandpass', 700, 0.6);
-  }
-
-  /** TELEOP start: three struck bells. */
-  bells() {
-    const ctx = this.ensure();
-    if (!ctx || this.sample('teleop')) return;
-    const t = ctx.currentTime + 0.02;
-    for (let k = 0; k < 3; k++) this.strike(t + k * 0.42, 880, 0.2);
-  }
-
-  private strike(t: number, f: number, g: number) {
-    for (const [ratio, amp, dec] of [
-      [1, 1, 1.6],
-      [2.76, 0.45, 0.9],
-      [5.4, 0.25, 0.5],
-      [8.93, 0.12, 0.3],
-    ] as const)
-      this.note(this.fieldBus!, 'sine', f * ratio, t, dec, g * amp, { attack: 0.002 });
-    this.burst(this.fieldBus!, t, 0.05, 0.08, 'highpass', 4000);
-  }
-
-  /** END GAME: steam whistle. */
-  whistle() {
-    const ctx = this.ensure();
-    if (!ctx || this.sample('endgame')) return;
-    const t = ctx.currentTime + 0.02;
-    for (const f of [466, 587, 698]) this.note(this.fieldBus!, 'sawtooth', f, t, 1.3, 0.07, { attack: 0.08, vibrato: 4, filter: 3200 });
-    this.burst(this.fieldBus!, t, 1.3, 0.06, 'bandpass', 2400, 1.5);
-  }
-
-  /** Shift change: two-tone chime. */
-  chime(active: boolean) {
-    const ctx = this.ensure();
-    if (!ctx || this.sample('shift')) return;
-    const t = ctx.currentTime + 0.02;
-    const [a, b] = active ? [784, 1175] : [1175, 784];
-    this.note(this.fieldBus!, 'triangle', a, t, 0.35, 0.16);
-    this.note(this.fieldBus!, 'triangle', b, t + 0.18, 0.5, 0.16);
-  }
-
-  /** Pre-match countdown beep (final = higher). */
-  countdown(final = false) {
-    const ctx = this.ensure();
-    if (!ctx || this.sample('countdown')) return;
-    this.note(this.fieldBus!, 'square', final ? 1046 : 660, ctx.currentTime + 0.01, 0.16, 0.08, { filter: 2400 });
-  }
-
-  // ------------------------------------------------------------- one-shots
-
-  shoot() {
-    if (!this.gate('shoot', 0.035)) return;
-    const ctx = this.ensure();
-    if (!ctx) return;
-    const t = ctx.currentTime;
-    this.note(this.sfxBus!, 'sine', 150, t, 0.12, 0.28, { slideTo: 55, attack: 0.002 });
-    this.burst(this.sfxBus!, t, 0.06, 0.18, 'bandpass', 900, 0.8);
-  }
-
-  intake() {
-    if (!this.gate('intake', 0.06)) return;
-    const ctx = this.ensure();
-    if (!ctx) return;
-    this.burst(this.sfxBus!, ctx.currentTime, 0.07, 0.12, 'lowpass', 500);
-  }
-
-  score() {
-    if (!this.gate('score', 0.05)) return;
-    const ctx = this.ensure();
-    if (!ctx) return;
-    const t = ctx.currentTime;
-    this.burst(this.sfxBus!, t, 0.08, 0.12, 'lowpass', 380);
-    this.note(this.sfxBus!, 'sine', 1318, t + 0.02, 0.22, 0.07, { attack: 0.003 });
-  }
-
-  wasted() {
-    if (!this.gate('wasted', 0.08)) return;
-    const ctx = this.ensure();
-    if (!ctx) return;
-    this.burst(this.sfxBus!, ctx.currentTime, 0.12, 0.12, 'lowpass', 240);
-  }
-
-  /** Robot impact (strength 0..1). */
-  impact(strength: number) {
-    if (!this.gate('impact', 0.12)) return;
-    const ctx = this.ensure();
-    if (!ctx) return;
-    const t = ctx.currentTime;
-    this.note(this.sfxBus!, 'sine', 90, t, 0.18, 0.25 * strength, { slideTo: 45, attack: 0.002 });
-    this.burst(this.sfxBus!, t, 0.12, 0.2 * strength, 'lowpass', 900);
-  }
-
-  climb() {
-    if (!this.gate('climb', 0.6)) return;
-    const ctx = this.ensure();
-    if (!ctx) return;
-    this.note(this.sfxBus!, 'sawtooth', 120, ctx.currentTime, 1.4, 0.05, { slideTo: 260, filter: 900, attack: 0.05 });
-  }
-
-  click() {
-    const ctx = this.ensure();
-    if (!ctx) return;
-    this.note(this.sfxBus!, 'square', 1800, ctx.currentTime, 0.03, 0.03, { attack: 0.001 });
-  }
-
-  // ------------------------------------------------------------- continuous robot loops
-
-  private loop(name: string, build: (ctx: AudioContext, out: GainNode) => { osc: OscillatorNode[]; filter?: BiquadFilterNode; src?: AudioBufferSourceNode }) {
-    if (this.loops[name]) return this.loops[name];
+  /** One foam ball landing: a dull low thump plus a short padded slap, darker with distance. */
+  private drop(t: number, loud: number, dist: number) {
     const ctx = this.ctx!;
-    const gain = ctx.createGain();
-    gain.gain.value = 0;
-    gain.connect(this.loopBus!);
-    const parts = build(ctx, gain);
-    this.loops[name] = { ...parts, gain };
-    return this.loops[name];
-  }
+    const out = ctx.createGain();
+    out.gain.value = 0.55 * loud;
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 2200 / (1 + dist / 4);
+    out.connect(lp);
+    lp.connect(this.dropBus!);
+    // Farther drops are mostly heard through the room.
+    const send = ctx.createGain();
+    send.gain.value = Math.min(1, 0.25 + dist / 12);
+    lp.connect(send).connect(this.reverb!);
 
-  /**
-   * Called every frame with the local robot's state (0..1 values; speed in m/s).
-   * Drive: swerve motor whine + carpet rumble. Flywheel: rising whine. Intake: roller drone. Indexer: rattle.
-   */
-  updateRobot(s: { speed: number; maxSpeed: number; spin: number; intake: number; feeding: boolean; enabled: boolean }) {
-    const ctx = this.ctx;
-    if (!ctx || ctx.state !== 'running') return;
-    const t = ctx.currentTime;
-    const k = s.enabled ? 1 : 0;
-    const sp = Math.min(1, s.speed / Math.max(0.5, s.maxSpeed));
-    const drive = this.loop('drive', (c, out) => {
-      const o1 = c.createOscillator();
-      const o2 = c.createOscillator();
-      o1.type = 'sawtooth';
-      o2.type = 'square';
-      const f = c.createBiquadFilter();
-      f.type = 'bandpass';
-      f.Q.value = 2.5;
-      o1.connect(f);
-      o2.connect(f);
-      f.connect(out);
-      const rumble = this.noise();
-      rumble.loop = true;
-      const rf = c.createBiquadFilter();
-      rf.type = 'lowpass';
-      rf.frequency.value = 180;
-      const rg = c.createGain();
-      rg.gain.value = 0.6;
-      rumble.connect(rf).connect(rg).connect(out);
-      o1.start();
-      o2.start();
-      rumble.start();
-      return { osc: [o1, o2], filter: f, src: rumble };
-    });
-    const df = 110 + sp * 620;
-    drive.osc[0].frequency.setTargetAtTime(df, t, 0.05);
-    drive.osc[1].frequency.setTargetAtTime(df * 1.5, t, 0.05);
-    drive.filter!.frequency.setTargetAtTime(df * 2, t, 0.05);
-    // Silent when stopped; motor whine fades in with speed.
-    drive.gain.gain.setTargetAtTime(k * (sp < 0.03 ? 0 : 0.015 + sp * 0.11), t, 0.06);
+    const f0 = 150 + Math.random() * 70;
+    const o = ctx.createOscillator();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(f0, t);
+    o.frequency.exponentialRampToValueAtTime(f0 * 0.55, t + 0.07);
+    const og = ctx.createGain();
+    og.gain.setValueAtTime(0.0001, t);
+    og.gain.exponentialRampToValueAtTime(1, t + 0.003);
+    og.gain.exponentialRampToValueAtTime(0.0001, t + 0.09);
+    o.connect(og).connect(out);
+    o.start(t);
+    o.stop(t + 0.12);
 
-    const fly = this.loop('fly', (c, out) => {
-      const o1 = c.createOscillator();
-      const o2 = c.createOscillator();
-      o1.type = 'triangle';
-      o2.type = 'sine';
-      o1.connect(out);
-      o2.connect(out);
-      o1.start();
-      o2.start();
-      return { osc: [o1, o2] };
-    });
-    fly.osc[0].frequency.setTargetAtTime(140 + s.spin * 980, t, 0.12);
-    fly.osc[1].frequency.setTargetAtTime(280 + s.spin * 1960, t, 0.12);
-    fly.gain.gain.setTargetAtTime(k * s.spin * 0.07, t, 0.1);
-
-    const intake = this.loop('intake', (c, out) => {
-      const o = c.createOscillator();
-      o.type = 'square';
-      o.frequency.value = 196;
-      const f = c.createBiquadFilter();
-      f.type = 'lowpass';
-      f.frequency.value = 700;
-      // Tremolo modulates an inner gain stage, so the loop's output gain (0 when the intake is off) still silences it.
-      const trem = c.createOscillator();
-      const tg = c.createGain();
-      const inner = c.createGain();
-      trem.frequency.value = 23;
-      tg.gain.value = 0.4;
-      inner.gain.value = 0.6;
-      trem.connect(tg).connect(inner.gain);
-      o.connect(f).connect(inner).connect(out);
-      o.start();
-      trem.start();
-      return { osc: [o, trem], filter: f };
-    });
-    intake.gain.gain.setTargetAtTime(k * s.intake * 0.05, t, 0.05);
-
-    const index = this.loop('index', (c, out) => {
-      const src = this.noise();
-      src.loop = true;
-      const f = c.createBiquadFilter();
-      f.type = 'bandpass';
-      f.frequency.value = 1300;
-      f.Q.value = 3;
-      src.connect(f).connect(out);
-      src.start();
-      return { osc: [], filter: f, src };
-    });
-    index.gain.gain.setTargetAtTime(k * (s.feeding ? 0.09 : 0), t, 0.04);
-  }
-
-  /** Silence the robot loops (pause / menus). */
-  stopLoops() {
-    const ctx = this.ctx;
-    if (!ctx) return;
-    for (const l of Object.values(this.loops)) l.gain.gain.setTargetAtTime(0, ctx.currentTime, 0.05);
-  }
-
-  /** Back-compat aliases. */
-  bell() {
-    this.bells();
-  }
-  horn() {
-    this.whistle();
+    const n = this.noise();
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = 500 + Math.random() * 300;
+    bp.Q.value = 0.9;
+    const ng = ctx.createGain();
+    ng.gain.setValueAtTime(0.5, t);
+    ng.gain.exponentialRampToValueAtTime(0.0001, t + 0.045);
+    n.connect(bp).connect(ng).connect(out);
+    n.start(t, Math.random() * 0.9);
+    n.stop(t + 0.06);
   }
 }
 

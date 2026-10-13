@@ -72,19 +72,34 @@ export const r2910: BuiltinRobot = {
     const rig = new Rig();
     const base = swerveBase(kit, rig, L, W, { electronics: [inches(1), 0] });
     const y0 = base.railTop;
-    const tint = mat(0x1e2228, { opacity: 0.5, rough: 0.06 });
+    const tint = mat(0x8c96a2, { opacity: 0.32, rough: 0.05 });
     const plateMat = mat(0xb9bec5, { metal: 0.75, rough: 0.35 });
 
     kit.box('bellypan_poly', [0, inches(1.2), 0], [L - inches(2), 0.003, W - inches(2)], M.polycarb());
 
     // ---------- shooter tower (rear): pocketed billet plates, drum + flywheel + hood rollers, firing forward
     const TX = -L / 2 + inches(5);
-    for (const s of [-1, 1]) kit.pocketPlate(`tower_plate${s}`, [TX, inches(11.5), s * (W / 2 - inches(0.6))], inches(10), inches(19), { color: 0xb9bec5, cell: inches(2.2), rib: inches(0.35), t: inches(0.25) });
+    // Billet isogrid tower plates, full height, with a rounded nose around the drum and a chamfered back.
+    const towerOutline: [number, number][] = [
+      [-inches(5.2), -inches(9.5)],
+      [inches(5.2), -inches(9.5)],
+      [inches(5.2), inches(4.5)],
+      [inches(3.2), inches(8.6)],
+      [inches(0.5), inches(9.6)],
+      [-inches(3.4), inches(9.2)],
+      [-inches(5.2), inches(6.5)],
+    ];
+    for (const s of [-1, 1]) {
+      kit.latticePlate(`tower_plate${s}`, [TX, inches(11.5), s * (W / 2 - inches(0.6))], 0, 0, { outline: towerOutline, cell: inches(1.5), rib: inches(0.2), t: inches(0.25) });
+      kit.latticePlate(`tower_plate_out${s}`, [TX - inches(0.5), inches(10), s * (W / 2 + inches(0.45))], inches(8), inches(13), { cell: inches(1.7), rib: inches(0.2) });
+    }
     kit.box('tower_backing', [TX - inches(3.5), inches(11), 0], [inches(0.25), inches(16), W - inches(1.4)], mat(0xeeeeee, { rough: 0.3 }));
     const drumC: [number, number, number] = [TX - inches(1), inches(17.5), 0];
     const drum = kit.drum('drum', drumC[0], drumC[1], W - inches(1.8), inches(2));
     const fly = kit.group('flywheel6');
     for (const s of [-1, 1]) kit.pulley(`flywheel6_${s}`, [drumC[0], drumC[1], s * (W / 2 - inches(0.15))], inches(3), { parent: fly, color: 0x9aa1aa, spokes: 6, t: inches(0.5) });
+    // Gold (brass-anodized) overdrive gear on the outside of the left plate.
+    kit.pulley('drum_gear_gold', [drumC[0] - inches(0.5), drumC[1] - inches(4.5), -(W / 2 + inches(0.85))], inches(2.4), { color: 0xc9a23a, spokes: 6, t: inches(0.4) });
     const hood = kit.group('hood');
     const hp: [number, number, number] = [TX + inches(2.5), inches(20.6), 0];
     for (let k = 0; k < 3; k++) kit.tubeRoller(`hood_roller${k}`, drumC[0] + inches(2.4) + k * inches(1.3), drumC[1] + inches(2.6) - k * inches(0.4), -W / 2 + inches(1.6), W / 2 - inches(1.6), inches(0.75), 0x8f969e, hood);
@@ -135,7 +150,6 @@ export const r2910: BuiltinRobot = {
     chamfer.rotation.z = -Math.PI / 4;
     kit.box('hopper_front', [hx1, hy0 + inches(4), 0], [0.003, inches(8), W - inches(0.8)], tint, hop);
     kit.box('hopper_front_tube', [hx1, hy1 - ch, 0], [inches(0.5), inches(1), W - inches(0.8)], M.tube(), hop);
-    for (const s of [-1, 1] as const) kit.sponsors(`sponsors_${s}`, [inches(1), y0 + inches(8), s * (W / 2 - inches(0.36))], inches(14), inches(6), ['BOEING', 'fabworks', 'WCP', 'Jackson HS', 'Mill Creek'], 'xy', s, hop, '#e8edf2');
 
     // ---------- slap-down intake: billet side plates, 2x2 bash bar over the 2in roller, two 1.25in lower rollers
     const ipiv: [number, number, number] = [L / 2 - inches(1.5), y0 + inches(7), 0];
