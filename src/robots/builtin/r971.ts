@@ -23,7 +23,7 @@ import { TURN_RATE, TURN_ACCEL } from '../../robot/schema';
  *    spur gear. Mixtape aims from any heading (the second robot's released code limits its turrets to ±95°).
  *  - Shooter: 4in 60A neoprene flywheels on two X60 (1:1), 50° range-of-motion arc hood (three curved bands on spoked
  *    side frames) on a lead screw (X44, 3:1), 1.25in kicker under the flywheels, 3/16in aluminum plates, PAHT-CF backing.
- *  - Capacity / BPS are estimates (~40 FUEL modeled, ~20 BPS from both turrets).
+ *  - Capacity / BPS are estimates (~50 FUEL modeled, ~20 BPS from both turrets).
  */
 const L = inches(25);
 const W = inches(30);
@@ -172,7 +172,7 @@ export const r971: BuiltinRobot = {
       compress: { from: 0, to: 55 / 72, period: 1 },
     },
     storage: {
-      capacity: 40,
+      capacity: 50,
       preload: 8,
       box: { center: [(BOX_X0 + BOX_X1) / 2 + inches(2.25), inches(12.2), 0], size: [BOX_X1 - BOX_X0 + inches(3.5), inches(17.5), W - inches(2)] },
       net: { stretch: inches(3), color: '#15171b' },
