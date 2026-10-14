@@ -187,7 +187,8 @@ export const r971: BuiltinRobot = {
       turretMin: -95, // TurretLeft/Right limits in 971's released code
       turretMax: 95,
       turretSpeed: 600,
-      yawOffset: 0,
+      // The turret model points +X at joint 0, but Mixtape's shooter faces the rear of the robot.
+      yawOffset: 180,
       sotm: true,
       sotmSkill: 0.75, // code leads turret, hood and flywheel by robot velocity (ShooterHandler)
     },
@@ -327,8 +328,9 @@ export const r971: BuiltinRobot = {
     rig.joint({ id: 'top_roll', type: 'spin', driver: 'indexer', parent: 'hopper_ext', pivot: [ex1 - inches(1.5), HOP_TOP - inches(1.4), 0], axis: [0, 0, 1], speed: 1000 }, topRoller);
     rig.joint({ id: 'floor', type: 'spin', driver: 'indexer', pivot: [BOX_X1 - inches(2), y0 + inches(0.8), 0], axis: [0, 0, 1], speed: 1200 }, 'floor_0');
     seps.forEach((g, k) => rig.joint({ id: `separator${k}`, type: 'spin', driver: 'indexer', pivot: [SEPX, 0, (k ? 1 : -1) * inches(2.4)], axis: [0, k ? -1 : 1, 0], speed: 900 }, g));
-    rig.joint({ id: 'turret_l', type: 'revolute', driver: 'turret', pivot: TL_P, axis: [0, 1, 0], speed: 600 }, a.tg);
-    rig.joint({ id: 'turret_r', type: 'revolute', driver: 'turret', pivot: TR_P, axis: [0, 1, 0], speed: 600 }, b.tg);
+    // Match the shooter zero to its rear-facing direction; the ±95° limits are relative to this 180° heading.
+    rig.joint({ id: 'turret_l', type: 'revolute', driver: 'turret', pivot: TL_P, axis: [0, 1, 0], stowed: 180, speed: 600 }, a.tg);
+    rig.joint({ id: 'turret_r', type: 'revolute', driver: 'turret', pivot: TR_P, axis: [0, 1, 0], stowed: 180, speed: 600 }, b.tg);
     for (const [t, id] of [
       [a, 'l'],
       [b, 'r'],
