@@ -20,7 +20,7 @@ import { TURN_RATE, TURN_ACCEL } from '../../robot/schema';
  *  - Indexer + hopper: roller floor (X60 1:1), powered separator — two omni-wheel clusters splitting FUEL into two
  *    paths (X60 1:4), 1.25in kicker roller (X60 1:1) into each shooter, top roller against jams, 1/16in polycarb walls.
  *  - Turrets: two, each on an X44 with a 14:200 belt reduction, 10in ID X-contact bearings, custom 124T aluminum
- *    spur gear, ±95° of travel (TurretLeft/TurretRight limits in the released code).
+ *    spur gear. Mixtape aims from any heading (the second robot's released code limits its turrets to ±95°).
  *  - Shooter: 4in 60A neoprene flywheels on two X60 (1:1), 50° range-of-motion arc hood (three curved bands on spoked
  *    side frames) on a lead screw (X44, 3:1), 1.25in kicker under the flywheels, 3/16in aluminum plates, PAHT-CF backing.
  *  - Capacity / BPS are estimates (~40 FUEL modeled, ~20 BPS from both turrets).
@@ -160,7 +160,7 @@ export const r971: BuiltinRobot = {
     color: '#2f5fd8',
     description:
       'Two independent turrets side by side on a silver truss deck, each on a 10in X-contact bearing with a 124T spur gear, 4in neoprene flywheels and a curved lead-screw arc hood. Twin omni-wheel separators split FUEL from a powered roller floor into two streams. A tall polycarb hopper extension stands well out over a 1678-style slapdown, with a grid net across the top, and a telescoping arm between the turrets climbs LEVEL 1.',
-    highlights: ['Dual independent turrets (±95° each)', 'Omni-wheel separator → two streams', 'Slapdown intake slides the hopper out', 'Shoot-on-the-move', 'LEVEL 1 telescoping climber', 'Fits under the TRENCH'],
+    highlights: ['Dual independent turrets, aim from any heading', 'Omni-wheel separator → two streams', 'Slapdown intake slides the hopper out', 'Shoot-on-the-move', 'LEVEL 1 telescoping climber', 'Fits under the TRENCH'],
     sources: ['971 Mixtape Technical Documentation 2026 (drivetrain, climber, intake, indexer, turrets, shooter)', '971 Onshape CAD release (top / iso / side / front / rear views)', 'github.com/frc971/971-second-robot-2026 (robot code + photo)'],
     frame: { length: L, width: W, height: H, mass: 59, comHeight: 0.16, bumperThickness: inches(3.5), bumperHeight: inches(5) },
     drivetrain: { type: 'swerve', maxSpeed: 4.5, maxAccel: 10, maxOmega: TURN_RATE, maxAlpha: TURN_ACCEL },
@@ -168,12 +168,14 @@ export const r971: BuiltinRobot = {
       zones: [{ center: [L / 2 + inches(7.5), inches(3.5), 0], size: [inches(6), inches(7), W - inches(2)] }],
       rate: 14,
       requiresDeploy: true,
+      // "Juice" (Superstructure.java): the pivot pumps between deployed and 55° of its 72° travel every second.
+      compress: { from: 0, to: 55 / 72, period: 1 },
     },
     storage: {
       capacity: 40,
       preload: 8,
       box: { center: [(BOX_X0 + BOX_X1) / 2 + inches(2.25), inches(12.2), 0], size: [BOX_X1 - BOX_X0 + inches(3.5), inches(17.5), W - inches(2)] },
-
+      net: { stretch: inches(3), color: '#15171b' },
     },
     shooter: {
       barrels: [{ exit: [0, 0, 0] }, { exit: [0, 0, 0] }],
@@ -184,8 +186,10 @@ export const r971: BuiltinRobot = {
       maxSpeed: 15,
       rate: 20,
       spread: 1.0,
-      turretMin: -95, // TurretLeft/Right limits in 971's released code
-      turretMax: 95,
+      // Mixtape's turrets reach the HUB from any heading, so the drivetrain never turns to aim. (The second robot's
+      // released code stops each at ±95°; Mixtape's own limits aren't published.)
+      turretMin: -180,
+      turretMax: 180,
       turretSpeed: 600,
       // The turret model points +X at joint 0, but Mixtape's shooter faces the rear of the robot.
       yawOffset: 180,

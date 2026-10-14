@@ -113,6 +113,15 @@ export const robotSchema = z.object({
       requiresDeploy: z.boolean().default(true),
       /** Once deployed the intake latches out for the rest of the match (e.g. 4414's steel latches). */
       latch: z.boolean().default(false),
+      /**
+       * While feeding (and not intaking), the deploy joints push into the hopper to crowd FUEL toward the indexer:
+       * positions are fractions of the travel from deployed (0) to stowed (1). With `period` > 0 they pump between
+       * `from` and `to` (971 "juice", 1678 contract-hopper); with 0 they hold at `to` (2910 retract-while-shooting).
+       */
+      compress: z
+        .object({ from: z.number().min(0).max(1).default(0), to: z.number().min(0).max(1), period: z.number().nonnegative().default(0) })
+        .nullable()
+        .default(null),
     })
     .nullable()
     .default(null),

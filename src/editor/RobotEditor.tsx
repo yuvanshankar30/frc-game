@@ -1011,7 +1011,7 @@ function MechanismsTab({
         onChange={(v) =>
           update((d) => {
             d.intake = v
-              ? { zones: [{ center: [f.length / 2 + f.bumperThickness + 0.08, 0.1, 0], size: [0.16, 0.16, f.width] }], rate: 12, requiresDeploy: d.joints.some((j) => j.driver === 'intake-deploy'), latch: false }
+              ? { zones: [{ center: [f.length / 2 + f.bumperThickness + 0.08, 0.1, 0], size: [0.16, 0.16, f.width] }], rate: 12, requiresDeploy: d.joints.some((j) => j.driver === 'intake-deploy'), latch: false, compress: null }
               : null;
           })
         }

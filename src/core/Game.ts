@@ -127,7 +127,7 @@ export class Game {
       this.placeRobot(r);
       r.stats.shots = r.stats.scored = r.stats.intaked = r.stats.movingShots = r.stats.movingScored = 0;
       r.movingBalls.clear();
-      r.intakeLatched = false;
+      r.intakeLatched = !!r.def.intake?.latch; // latching intakes start deployed
       r.preload(this.field.fuel, r.def.storage.preload);
     }
     this.match.phase = 'pre';

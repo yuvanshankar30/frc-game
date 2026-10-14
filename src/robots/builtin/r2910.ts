@@ -43,6 +43,10 @@ export const r2910: BuiltinRobot = {
       zones: [{ center: [L / 2 + inches(9), inches(3.5), 0], size: [inches(7), inches(7), W - inches(1)] }],
       rate: 24,
       requiresDeploy: true,
+      // The intake rests deployed (IntakeSubsystem default DEPLOY) and retracts to 10° of its 114.3° while shooting
+      // to compress FUEL in the hopper (SuperStructure.setIntakeShootingState).
+      latch: true,
+      compress: { from: (114.3 - 10) / 114.3, to: (114.3 - 10) / 114.3, period: 0 },
     },
     storage: {
       capacity: 58,

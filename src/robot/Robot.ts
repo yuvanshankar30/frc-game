@@ -118,6 +118,9 @@ export class Robot {
   feeding = false;
   /** Latched intakes stay deployed after their first deploy. */
   intakeLatched = false;
+  /** Where the intake is pushing into the hopper while feeding (fraction deployed → stowed), or null. */
+  private compressFrac: number | null = null;
+  private compressT = 0;
   turretYaw: number[] = [];
   hoodAngle = 0;
   /** Last computed shot (for HUD / debug). */
@@ -148,6 +151,9 @@ export class Robot {
 
     // Bake parts that move together into a few meshes: a built-in robot is ~1000 small parts, each a draw call (twice
     // with shadows).
+    // A net drawn into the model (shown in previews) is swapped for the live one that stretches over the pile.
+    const staticNet = def.storage.net ? model.getObjectByName('hopper_net_top') : undefined;
+    if (staticNet) staticNet.visible = false; // hidden parts stay out of the merge
     this.assembly = assemble(def, model, true);
     this.visual.add(this.assembly.root);
     this.visual.add(makeBumpers(def, ALLIANCE_COLOR[alliance], label));
@@ -158,7 +164,17 @@ export class Robot {
       }
     });
     this.hopper = this.resolveHopper();
-    if (def.storage.net) this.net = new HopperNet(this.hopper.center, this.hopper.size, def.storage.net.stretch, def.storage.net.color, this.visual);
+    if (def.storage.net) {
+      let c = this.hopper.center;
+      let size = this.hopper.size;
+      if (staticNet) {
+        // Same rectangle as the model's net, at its height (robot-local; the visual sits at the origin here).
+        const b = new THREE.Box3().setFromObject(staticNet, true);
+        c = b.getCenter(new THREE.Vector3());
+        size = new THREE.Vector3(b.max.x - b.min.x, 0, b.max.z - b.min.z);
+      }
+      this.net = new HopperNet(c, size, def.storage.net.stretch, def.storage.net.color, this.visual);
+    }
     scene.add(this.visual);
 
     // ---- physics body
@@ -670,8 +686,10 @@ export class Robot {
         const dx = feed[0] - lp.x;
         const dz = feed[2] - lp.z;
         const d = Math.max(0.05, Math.hypot(dx, dz));
-        vx = (dx / d) * 1.2;
-        vz = (dz / d) * 1.2;
+        // An intake pushing into the hopper crowds the pile toward the feed faster.
+        const push = this.compressFrac !== null ? 1.8 : 1.2;
+        vx = (dx / d) * push;
+        vz = (dz / d) * push;
       }
       const target = new THREE.Vector3(vx, 0, vz).applyQuaternion(q);
       const pv = this.pointVelocity(fuel.position(i));
@@ -1016,6 +1034,17 @@ export class Robot {
     // Aim (turret + hood + speed).
     const aim = def.shooter ? this.computeAim(ctx, dt) : null;
 
+    // While feeding, an intake that compresses the hopper pushes in (or pumps) to crowd FUEL toward the indexer.
+    const cp = def.intake?.compress;
+    if (cp && canAct && this.feeding && !cmd.intake && !cmd.eject) {
+      this.compressT += dt;
+      const phase = cp.period > 0 ? 0.5 - 0.5 * Math.cos((2 * Math.PI * this.compressT) / cp.period) : 1;
+      this.compressFrac = cp.from + (cp.to - cp.from) * phase;
+    } else {
+      this.compressT = 0;
+      this.compressFrac = null;
+    }
+
     // Joints.
     let deployProgress = 1;
     for (const jt of this.assembly.joints.values()) {
@@ -1045,7 +1074,8 @@ export class Robot {
     const d = jt.def;
     switch (d.driver) {
       case 'intake-deploy':
-        jt.target = this.intakeOn > 0.01 || this.intakeLatched ? d.active : d.stowed;
+        if (this.compressFrac !== null) jt.target = d.active + (d.stowed - d.active) * this.compressFrac;
+        else jt.target = this.intakeOn > 0.01 || this.intakeLatched ? d.active : d.stowed;
         break;
       case 'intake-roller':
         // Rollers aren't animated: a spinning roller strobes at frame rate and reads as noise.
@@ -1171,18 +1201,28 @@ export class Robot {
   /** Where barrel 0 is aiming on the floor plane (the HUB, led by robot velocity when shooting on the move). */
   private aimPoint = new THREE.Vector3(Number.NaN, 0, 0);
   private aimTimer = 0;
+  /** Time since the aim was last solved (s). */
+  private aimAge = 0;
+  /** Each turret's current goal: the solved yaw, carried forward for the chassis spin since the solve. */
+  private turretGoal: number[] = [];
 
   private computeAim(ctx: RobotContext, dt: number): AimResult {
     const sh = this.def.shooter!;
     this.aimTimer -= dt;
+    this.aimAge += dt;
     if (!this.aimCache || this.aimTimer <= 0) {
       this.aimTimer = 1 / 30;
+      this.aimAge = 0;
       this.aimCache = this.solveAim(ctx);
     }
     const results = this.aimCache.barrels;
-    // Slew turrets and hood toward their targets every step.
+    // Slew turrets and hood toward their targets every step. The solve is a few steps old, so a turret counter-rotates
+    // for the chassis spin since then (as 971's ShooterHandler feeds robot omega forward) and holds on target mid-spin.
+    const spun = this.body.angvel().y * this.aimAge;
     for (let b = 0; b < results.length; b++) {
-      this.turretYaw[b] = approach(this.turretYaw[b] ?? 0, results[b].yaw, sh.turretSpeed * DEG * dt);
+      this.turretGoal[b] = results[b].yaw - spun;
+      if (sh.turretMin !== null && sh.turretMax !== null) this.turretGoal[b] = clamp(wrapAngle(this.turretGoal[b]), sh.turretMin * DEG, sh.turretMax * DEG);
+      this.turretYaw[b] = approach(this.turretYaw[b] ?? 0, this.turretGoal[b], sh.turretSpeed * DEG * dt);
     }
     // A hood that stows when idle folds down to its lowest angle until the driver asks for a shot.
     const hoodGoal = sh.hoodStowsIdle && sh.hoodMin !== null && !this.shootHeld ? sh.hoodMin : results[0].elev / DEG;
@@ -1303,7 +1343,7 @@ export class Robot {
       for (let b = 0; b < aim.barrels.length; b++) {
         const a = aim.barrels[b];
         if (a.err > tol) return false;
-        if (Math.abs((this.turretYaw[b] ?? 0) - a.yaw) > tol) return false;
+        if (Math.abs((this.turretYaw[b] ?? 0) - (this.turretGoal[b] ?? a.yaw)) > tol) return false;
       }
     } else {
       // Fixed shooter: fire whenever the heading (led for robot motion and spin) points the shooter at the HUB. While
@@ -1675,7 +1715,7 @@ export class Robot {
     }
     this.visual.position.set(p.x, p.y + w.bob, p.z);
     this.visual.quaternion.copy(q).multiply(this.tmpQ.setFromEuler(this.swayEuler.set(w.roll, 0, w.pitch)));
-    if (this.net && this.fuel) this.net.update(this.stored.map((i) => this.toLocal(this.fuel!.position(i))));
+    if (this.net && this.fuel) this.net.update(this.stored.map((i) => this.toLocal(this.fuel!.position(i))), this.carried / this.def.storage.capacity);
     // Swerve modules: steer visuals if the model tagged them (optional, cosmetic).
     if (this.def.drivetrain.type === 'swerve') {
       const states = swerveModuleStates(this.speeds, this.wheelPositions);
@@ -1732,7 +1772,8 @@ function gauss() {
 
 /**
  * Hopper net: a grid draped over the FUEL pile. Edges stay on the hopper rim; interior vertices
- * rise to sit on top of the balls below them, up to the net's stretch.
+ * rise to sit on top of the balls below them, up to the net's stretch. As the hopper nears capacity the whole net
+ * domes up too (issue #12): a full load pushes against it even where the pile is out of sight.
  */
 class HopperNet {
   private mesh: THREE.Mesh;
@@ -1757,10 +1798,13 @@ class HopperNet {
     this.heights = new Float32Array((this.nx + 1) * (this.nz + 1));
   }
 
-  update(balls: THREE.Vector3[]) {
+  update(balls: THREE.Vector3[], fill: number) {
     const pos = this.mesh.geometry.getAttribute('position') as THREE.BufferAttribute;
     const top = this.c.y + this.s.y / 2;
     const R = FUEL.radius;
+    // Bulge from the load: nothing until ~55% full, the full stretch at capacity.
+    const k = clamp((fill - 0.55) / 0.45, 0, 1);
+    const bulge = this.stretch * k * Math.sqrt(k);
     for (let i = 0; i < pos.count; i++) {
       const x = pos.getX(i);
       const z = pos.getZ(i);
@@ -1769,6 +1813,7 @@ class HopperNet {
       const edge = ix === 0 || iz === 0 || ix === this.nx || iz === this.nz;
       let h = top;
       if (!edge) {
+        h = top + bulge * Math.sin((Math.PI * ix) / this.nx) * Math.sin((Math.PI * iz) / this.nz);
         for (const b of balls) {
           const dx = x - b.x;
           const dz = z - b.z;

@@ -46,6 +46,8 @@ export const r1678: BuiltinRobot = {
       zones: [{ center: [L / 2 + inches(9), inches(3.5), 0], size: [inches(7), inches(7), W - inches(1)] }],
       rate: 22,
       requiresDeploy: true,
+      // Superstructure.contractHopper: the pivot steps between 25° and 80° of its 130° travel to crowd the hopper.
+      compress: { from: 25 / 130, to: 80 / 130, period: 1 },
     },
     storage: {
       capacity: 55,
