@@ -59,6 +59,7 @@ export const r1690: BuiltinRobot = {
       turretSpeed: 720,
       yawOffset: 180,
       sotm: true,
+      sotmSkill: 0.9, // built around SOTM: turret shoots while the intake keeps running
     },
     climber: { maxLevel: 1, climbTime: 2.2, canAutoClimb: true },
     source: 'builtin:1690',

@@ -64,6 +64,7 @@ export const r1678: BuiltinRobot = {
       turretMax: null,
       yawOffset: 180,
       sotm: true,
+      sotmSkill: 0.4, // a dumper: stops to unload the drum
     },
     climber: { maxLevel: 1, climbTime: 2.5, canAutoClimb: true },
     source: 'builtin:1678',

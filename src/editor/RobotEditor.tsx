@@ -1135,6 +1135,9 @@ function MechanismsTab({
           />
           <NumM label="Spread (° 1σ)" value={sh.spread} onChange={(v) => update((d) => void (d.shooter!.spread = Math.max(0, v)))} />
           <Check label="Shoot on the move" value={sh.sotm} onChange={(v) => update((d) => void (d.shooter!.sotm = v))} />
+          {sh.sotm && (
+            <NumM label="Moving accuracy (0–1)" value={sh.sotmSkill} onChange={(v) => update((d) => void (d.shooter!.sotmSkill = Math.min(1, Math.max(0, v))))} />
+          )}
           {sh.barrels.map((b, i) => (
             <div key={i} className="joint-item">
               <div className="row">

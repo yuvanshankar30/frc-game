@@ -152,6 +152,11 @@ export const robotSchema = z.object({
       yawOffset: z.number().default(0),
       /** Shoot-on-the-move: aim compensates for robot velocity. */
       sotm: z.boolean().default(false),
+      /**
+       * How well the shot holds up while the robot drives / turns (0–1). Motion adds aim and speed error (localization
+       * lag, chassis vibration, turret / hood tracking); 1 is an elite shoot-on-the-move robot, 0 one that has to stop.
+       */
+      sotmSkill: z.number().min(0).max(1).default(0.5),
     })
     .nullable()
     .default(null),

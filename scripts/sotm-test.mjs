@@ -21,19 +21,20 @@ for (const team of (process.env.ROBOTS ?? '4414,971,2910,1690,254,1678').split('
     const cases = {
       still: () => ({}),
       strafe: (t) => ({ z: 0.6 * Math.sign(Math.sin(t * 1.6)) }),
+      fullStrafe: (t) => ({ z: Math.sign(Math.sin(t * 1.6)) }),
+      orbit: (t) => ({ x: 0.5 * Math.sin(t * 1.4), z: 0.8 * Math.cos(t * 1.4) }),
       spin: () => ({ rot: 1 }),
-      strafeSpin: (t) => ({ z: 0.6 * Math.sign(Math.sin(t * 1.6)), rot: 0.7 }),
     };
     for (const [name, fn] of Object.entries(cases)) {
       rob.stored.splice(0).forEach((i) => g.field.fuel.hold(i, 'free'));
       rob.teleport(hub.x - 2.8, 0.4, 0.3);
       rob.preload(g.field.fuel, 16);
       for (let k = 0; k < 60; k++) g.stepSim([idle], 1 / 120);
-      rob.stats.shots = 0; rob.stats.scored = 0;
+      rob.stats.shots = 0; rob.stats.scored = 0; rob.stats.movingShots = 0; rob.stats.movingScored = 0;
       const y0 = rob.yaw; let turned = 0, last = y0;
       for (let k = 0; k < 120 * 4; k++) { g.stepSim([{ ...idle, ...fn(k / 120), shoot: true }], 1 / 120); const y = rob.yaw; turned += Math.abs(Math.atan2(Math.sin(y - last), Math.cos(y - last))); last = y; }
       for (let k = 0; k < 120 * 2.5; k++) g.stepSim([idle], 1 / 120);
-      out[name] = `${rob.stats.scored}/${rob.stats.shots} turn${Math.round(turned * 57.3)}°`;
+      out[name] = `${rob.stats.scored}/${rob.stats.shots}` + (name === 'still' ? '' : ` mv${rob.stats.movingScored ?? 0}/${rob.stats.movingShots ?? 0}`);
     }
     return out;
   });

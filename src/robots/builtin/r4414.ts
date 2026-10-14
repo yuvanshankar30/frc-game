@@ -72,6 +72,7 @@ export const r4414: BuiltinRobot = {
       turretSpeed: 540,
       yawOffset: 0,
       sotm: true,
+      sotmSkill: 0.85, // SOTM on a stiff 55.7:1 turret; world champion shooting from anywhere
     },
     climber: null,
     source: 'builtin:4414',

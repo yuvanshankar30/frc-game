@@ -79,6 +79,9 @@ export interface PlayerHud {
   assist: boolean;
   shots: number;
   scored: number;
+  /** Shots fired / made while driving or turning. */
+  movingShots: number;
+  movingScored: number;
   intaked: number;
   /** Intake / shooter activity (0..1) and readiness, for status lights. */
   intaking: number;

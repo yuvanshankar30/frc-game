@@ -125,7 +125,8 @@ export class Game {
       r.clearHopper(); // stageFuel() already reset every ball
       r.fuel = this.field.fuel;
       this.placeRobot(r);
-      r.stats.shots = r.stats.scored = r.stats.intaked = 0;
+      r.stats.shots = r.stats.scored = r.stats.intaked = r.stats.movingShots = r.stats.movingScored = 0;
+      r.movingBalls.clear();
       r.intakeLatched = false;
       r.preload(this.field.fuel, r.def.storage.preload);
     }
@@ -163,7 +164,10 @@ export class Game {
     const shooter = this.field.fuel.lastShooter[ball];
     if (shooter && pts > 0) {
       const r = this.allRobots().find((x) => x.id === shooter);
-      if (r) r.stats.scored++;
+      if (r) {
+        r.stats.scored++;
+        if (r.movingBalls.delete(ball)) r.stats.movingScored = (r.stats.movingScored ?? 0) + 1;
+      }
     }
   }
 
@@ -470,6 +474,8 @@ export class Game {
         assist: p.assist && !this.config.settings.expert,
         shots: p.robot.stats.shots,
         scored: p.robot.stats.scored,
+        movingShots: p.robot.stats.movingShots ?? 0,
+        movingScored: p.robot.stats.movingScored ?? 0,
         intaked: p.robot.stats.intaked,
         intaking: p.robot.intakeOn,
         spin: p.robot.spin,

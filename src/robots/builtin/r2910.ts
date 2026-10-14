@@ -64,6 +64,7 @@ export const r2910: BuiltinRobot = {
       turretMax: null,
       yawOffset: 0,
       sotm: true,
+      sotmSkill: 0.6, // strafes sideways past the HUB on its side intakes while shooting
     },
     climber: null,
     source: 'builtin:2910',

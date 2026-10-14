@@ -53,6 +53,9 @@ export interface RobotStats {
   shots: number;
   scored: number;
   intaked: number;
+  /** Shots fired / made while driving (over 0.5 m/s) or turning (over ~45°/s). */
+  movingShots?: number;
+  movingScored?: number;
   /** Balls lost on the way in (entry failed) / bounced out of the hopper afterwards. */
   missedEntry?: number;
   spilled?: number;
@@ -719,7 +722,9 @@ export class Robot {
 
     // Aim assist for fixed shooters (and turrets at their limit): rotate the robot toward the HUB.
     let assisted = false;
-    if (ctx.assist && cmd.shoot && this.def.shooter && this.carried > 0) {
+    // Only a fixed shooter has to point the robot. Turret robots (971's code, for one, never turns the drivetrain to
+    // aim) fire whenever the target is inside the turret's range and leave positioning to the driver.
+    if (ctx.assist && cmd.shoot && this.def.shooter && this.def.shooter.turretMin === null && this.carried > 0) {
       const err = this.robotAimError(ctx);
       // A turret covering the target (err exactly 0) aims by itself: leave the chassis to the driver.
       if (err !== null && err !== 0 && Math.abs(cmd.rot) < 0.2) {
@@ -1275,6 +1280,9 @@ export class Robot {
     return new THREE.Vector3(lv.x + av.y * rz - av.z * ry, lv.y + av.z * rx - av.x * rz, lv.z + av.x * ry - av.y * rx);
   }
 
+  /** Balls this robot last fired while moving (so a score can be credited to the on-the-move stat). */
+  readonly movingBalls = new Set<number>();
+
   private runShooter(ctx: RobotContext, aim: AimResult, dt: number) {
     const sh = this.def.shooter!;
     this.fireTimer -= dt;
@@ -1287,18 +1295,32 @@ export class Robot {
       this.fireTimer = Math.max(this.fireTimer, 0);
       return;
     }
+    // Shooting on the move costs accuracy: the robot's pose estimate lags, the chassis shakes, and the turret / hood
+    // chase a moving solution. The error grows with speed and turn rate and shrinks with the robot's SOTM skill.
+    const lv = this.body.linvel();
+    const speed = Math.hypot(lv.x, lv.z);
+    const turn = Math.abs(this.body.angvel().y);
+    const moving = speed > 0.5 || turn > 0.8;
+    const sloppy = 1 - sh.sotmSkill;
+    const motionDeg = 0.35 * speed + sloppy * (1.5 * speed + 1.6 * turn);
+    const speedErr = 0.002 * speed + sloppy * 0.012 * speed;
     // At most one ball per lane per physics step, so balls never spawn on top of each other.
     let fired = 0;
     while (this.fireTimer <= 0 && this.carried > 0 && fired < sh.barrels.length) {
       this.fireTimer += 1 / sh.rate;
       const b = this.barrel % sh.barrels.length;
       this.barrel++;
-      const { pos, vel, spin } = this.launchState(b, aim.barrels[b], sh.spread * DEG, ctx.expert ? this.spin : 1);
+      const wheel = (ctx.expert ? this.spin : 1) * (1 + gauss() * speedErr);
+      const { pos, vel, spin } = this.launchState(b, aim.barrels[b], Math.hypot(sh.spread, motionDeg) * DEG, wheel);
       const ex = sh.barrels[b].exit;
       const i = this.takeStored(ctx.field.fuel, { x: ex[0], y: this.hopper.center.y - this.hopper.size.y / 2, z: ex[2] });
       if (i < 0) break;
       ctx.field.fuel.place(i, pos, vel, this.id, spin);
       this.stats.shots++;
+      if (moving) {
+        this.stats.movingShots = (this.stats.movingShots ?? 0) + 1;
+        this.movingBalls.add(i);
+      } else this.movingBalls.delete(i);
       fired++;
     }
     if (this.fireTimer < 0) this.fireTimer = 0;

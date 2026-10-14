@@ -59,6 +59,7 @@ export const r254: BuiltinRobot = {
       turretMax: null,
       yawOffset: 180,
       sotm: true,
+      sotmSkill: 0.45, // a dumper: lines up and unloads, little shooting while driving
     },
     climber: null,
     source: 'builtin:254',

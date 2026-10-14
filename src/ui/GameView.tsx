@@ -196,6 +196,7 @@ function Results({ hud, onQuit, onRestart }: { hud: Hud; onQuit: () => void; onR
               <th>Shots</th>
               <th>Made</th>
               <th>Acc</th>
+              <th>On the move</th>
               {FEATURES.climbing && <th>Climb</th>}
             </tr>
           </thead>
@@ -209,6 +210,7 @@ function Results({ hud, onQuit, onRestart }: { hud: Hud; onQuit: () => void; onR
                 <td>{p.shots}</td>
                 <td>{p.scored}</td>
                 <td>{p.shots ? `${Math.round((p.scored / p.shots) * 100)}%` : '—'}</td>
+                <td>{p.movingShots ? `${p.movingScored}/${p.movingShots} · ${Math.round((p.movingScored / p.movingShots) * 100)}%` : '—'}</td>
                 {FEATURES.climbing && <td>{p.climbLevel ? `L${p.climbLevel}` : '—'}</td>}
               </tr>
             ))}

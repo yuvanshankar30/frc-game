@@ -121,9 +121,9 @@ export function DriverPanel({ p, style, outpost }: { p: PlayerHud; style: React.
           </div>
         </div>
         <div className="dp-grid">
-          <Stat k="SHOTS" v={p.shots} />
-          <Stat k="MADE" v={p.scored} />
+          <Stat k="MADE" v={`${p.scored}/${p.shots}`} />
           <Stat k="ACC" v={acc === null ? '—' : `${acc}%`} />
+          <Stat k="MOVING" v={p.movingShots ? `${Math.round((p.movingScored / p.movingShots) * 100)}%` : '—'} />
           <Stat k="BPS" v={p.bps} />
           <Stat k="DIST" v={`${p.distance.toFixed(1)}m`} warn={!p.aimOk} />
           <Stat k="SPEED" v={`${(p.speed * 3.281).toFixed(1)}`} unit="ft/s" />

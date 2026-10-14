@@ -7,6 +7,11 @@ import { connectedGamepads } from '../core/input/Input';
 import type { RobotDefinition } from '../robot/schema';
 import { FEATURES } from '../game/features';
 
+/** How well a robot keeps scoring while driving (its shoot-on-the-move rating). */
+function sotmLabel(skill: number) {
+  return skill >= 0.8 ? 'Elite' : skill >= 0.65 ? 'Good' : skill >= 0.5 ? 'Fair' : 'Stops to shoot';
+}
+
 export function RobotStats({ def }: { def: RobotDefinition }) {
   const sh = def.shooter;
   const ftps = (def.drivetrain.maxSpeed * 3.281).toFixed(1);
@@ -16,6 +21,7 @@ export function RobotStats({ def }: { def: RobotDefinition }) {
     ['Fire rate', sh ? <>{sh.rate}<small> bps</small></> : '—'],
     ['Shooter', sh ? (sh.turretMin !== null ? (sh.barrels.length > 1 ? `${sh.barrels.length}× turret` : 'Turret') : `${sh.barrels.length}-lane drum`) : '—'],
     ['Intake', def.intake ? <>{def.intake.rate}<small> /s</small></> : '—'],
+    ['Shoots moving', sh ? sotmLabel(sh.sotm ? sh.sotmSkill : 0) : '—'],
     ...(FEATURES.climbing ? [['Climb', def.climber?.maxLevel ? `L${def.climber.maxLevel}` : 'None'] as [string, React.ReactNode]] : []),
     ['Drive', def.drivetrain.type[0].toUpperCase() + def.drivetrain.type.slice(1)],
     ['Frame', <>{(def.frame.length / 0.0254).toFixed(1)}×{(def.frame.width / 0.0254).toFixed(1)}<small> in</small></>],

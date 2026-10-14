@@ -20,7 +20,7 @@ import { TURN_RATE, TURN_ACCEL } from '../../robot/schema';
  *  - Indexer + hopper: roller floor (X60 1:1), powered separator — two omni-wheel clusters splitting FUEL into two
  *    paths (X60 1:4), 1.25in kicker roller (X60 1:1) into each shooter, top roller against jams, 1/16in polycarb walls.
  *  - Turrets: two, each on an X44 with a 14:200 belt reduction, 10in ID X-contact bearings, custom 124T aluminum
- *    spur gear, ~210° of travel.
+ *    spur gear, ±95° of travel (TurretLeft/TurretRight limits in the released code).
  *  - Shooter: 4in 60A neoprene flywheels on two X60 (1:1), 50° range-of-motion arc hood (three curved bands on spoked
  *    side frames) on a lead screw (X44, 3:1), 1.25in kicker under the flywheels, 3/16in aluminum plates, PAHT-CF backing.
  *  - Capacity / BPS are estimates (~40 FUEL modeled, ~20 BPS from both turrets).
@@ -160,7 +160,7 @@ export const r971: BuiltinRobot = {
     color: '#2f5fd8',
     description:
       'Two independent turrets side by side on a silver truss deck, each on a 10in X-contact bearing with a 124T spur gear, 4in neoprene flywheels and a curved lead-screw arc hood. Twin omni-wheel separators split FUEL from a powered roller floor into two streams. A 1678-style slapdown pushes the tall polycarb hopper out past the bumper, and a telescoping arm between the turrets climbs LEVEL 1.',
-    highlights: ['Dual independent turrets (~210° each)', 'Omni-wheel separator → two streams', 'Slapdown intake slides the hopper out', 'Shoot-on-the-move', 'LEVEL 1 telescoping climber', 'Fits under the TRENCH'],
+    highlights: ['Dual independent turrets (±95° each)', 'Omni-wheel separator → two streams', 'Slapdown intake slides the hopper out', 'Shoot-on-the-move', 'LEVEL 1 telescoping climber', 'Fits under the TRENCH'],
     sources: ['971 Mixtape Technical Documentation 2026 (drivetrain, climber, intake, indexer, turrets, shooter)', '971 Onshape CAD release (top / iso / side / front / rear views)', 'github.com/frc971/971-second-robot-2026 (robot code + photo)'],
     frame: { length: L, width: W, height: H, mass: 59, comHeight: 0.16, bumperThickness: inches(3.5), bumperHeight: inches(5) },
     drivetrain: { type: 'swerve', maxSpeed: 4.5, maxAccel: 10, maxOmega: TURN_RATE, maxAlpha: TURN_ACCEL },
@@ -183,11 +183,12 @@ export const r971: BuiltinRobot = {
       maxSpeed: 15,
       rate: 20,
       spread: 1.0,
-      turretMin: -105,
-      turretMax: 105,
+      turretMin: -95, // TurretLeft/Right limits in 971's released code
+      turretMax: 95,
       turretSpeed: 600,
       yawOffset: 0,
       sotm: true,
+      sotmSkill: 0.75, // code leads turret, hood and flywheel by robot velocity (ShooterHandler)
     },
     climber: { maxLevel: 1, climbTime: 2.6, canAutoClimb: true },
     source: 'builtin:971',
