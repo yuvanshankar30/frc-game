@@ -339,6 +339,87 @@ function isogridShape(outline: [number, number][], rib: number, cell: number) {
   return s;
 }
 
+/**
+ * Generatively pocketed ("web") plate: the organic triangulated pocketing of many 2025-26 CAD plates. A jittered grid
+ * of nodes is triangulated and each triangle becomes a pocket shrunk by the rib width; pockets too close to the outline
+ * are skipped so a solid rim remains. Deterministic for a given seed.
+ */
+function webShape(outline: [number, number][], rib: number, cell: number, seed: number) {
+  const s = new THREE.Shape();
+  outline.forEach(([x, y], k) => (k ? s.lineTo(x, y) : s.moveTo(x, y)));
+  s.closePath();
+  let st = (seed * 9301 + 49297) % 233280 || 1;
+  const rnd = () => ((st = (st * 9301 + 49297) % 233280) / 233280);
+  const inside = (x: number, y: number) => {
+    let c = false;
+    for (let i = 0, j = outline.length - 1; i < outline.length; j = i++) {
+      const [xi, yi] = outline[i];
+      const [xj, yj] = outline[j];
+      if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) c = !c;
+    }
+    return c;
+  };
+  const edgeDist = (x: number, y: number) => {
+    let d = Infinity;
+    for (let i = 0, j = outline.length - 1; i < outline.length; j = i++) {
+      const [ax, ay] = outline[j];
+      const [bx, by] = outline[i];
+      const ex = bx - ax;
+      const ey = by - ay;
+      const t = Math.max(0, Math.min(1, ((x - ax) * ex + (y - ay) * ey) / (ex * ex + ey * ey || 1)));
+      d = Math.min(d, Math.hypot(x - ax - ex * t, y - ay - ey * t));
+    }
+    return d;
+  };
+  const xs = outline.map((p) => p[0]);
+  const ys = outline.map((p) => p[1]);
+  const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
+  const nx = Math.max(1, Math.round((x1 - x0) / cell));
+  const ny = Math.max(1, Math.round((y1 - y0) / cell));
+  const node: [number, number][][] = [];
+  for (let i = 0; i <= nx; i++) {
+    node.push([]);
+    for (let j = 0; j <= ny; j++) {
+      const edge = i === 0 || j === 0 || i === nx || j === ny;
+      const jx = edge ? 0 : (rnd() - 0.5) * 0.55;
+      const jy = edge ? 0 : (rnd() - 0.5) * 0.55;
+      node[i].push([x0 + ((i + jx) * (x1 - x0)) / nx, y0 + ((j + jy) * (y1 - y0)) / ny]);
+    }
+  }
+  const pocket = (tri: [number, number][]) => {
+    const cx = (tri[0][0] + tri[1][0] + tri[2][0]) / 3;
+    const cy = (tri[0][1] + tri[1][1] + tri[2][1]) / 3;
+    // Inradius from area / semi-perimeter, then shrink toward the centroid by the rib.
+    const [a, b, c] = tri;
+    const area = Math.abs((b[0] - a[0]) * (c[1] - a[1]) - (c[0] - a[0]) * (b[1] - a[1])) / 2;
+    const per = Math.hypot(b[0] - a[0], b[1] - a[1]) + Math.hypot(c[0] - b[0], c[1] - b[1]) + Math.hypot(a[0] - c[0], a[1] - c[1]);
+    const r = (2 * area) / per;
+    if (r <= rib / 2 + 0.003) return;
+    const f = (r - rib / 2) / r;
+    const pts = tri.map(([x, y]) => [cx + (x - cx) * f, cy + (y - cy) * f] as [number, number]);
+    if (!pts.every(([x, y]) => inside(x, y) && edgeDist(x, y) > rib * 1.2)) return;
+    // Holes wind opposite to the outline (counter-clockwise outline -> clockwise holes).
+    const cw = (pts[1][0] - pts[0][0]) * (pts[2][1] - pts[0][1]) - (pts[2][0] - pts[0][0]) * (pts[1][1] - pts[0][1]) < 0;
+    const ordered = cw ? pts : [pts[0], pts[2], pts[1]];
+    const path = new THREE.Path();
+    ordered.forEach(([x, y], i) => (i ? path.lineTo(x, y) : path.moveTo(x, y)));
+    path.closePath();
+    s.holes.push(path);
+  };
+  for (let i = 0; i < nx; i++)
+    for (let j = 0; j < ny; j++) {
+      const [p00, p10, p01, p11] = [node[i][j], node[i + 1][j], node[i][j + 1], node[i + 1][j + 1]];
+      if ((i + j) % 2) {
+        pocket([p00, p10, p11]);
+        pocket([p00, p11, p01]);
+      } else {
+        pocket([p00, p10, p01]);
+        pocket([p10, p11, p01]);
+      }
+    }
+  return s;
+}
+
 /** Hood sector gear: pie slice with teeth on the arc and pocketed interior. */
 function sectorShape(r: number, a0: number, a1: number, teeth: number) {
   const s = new THREE.Shape();
@@ -463,6 +544,24 @@ export class Kit {
     ];
     const shape = isogridShape(outline, opts.rib ?? inches(0.22), opts.cell ?? inches(1.6));
     return this.extrude(name, shape, opts.t ?? inches(0.19), machined(opts.color ?? ALU_PLATE), opts.plane ?? 'xy', c, opts.parent);
+  }
+
+  /** Plate with organic triangulated pockets (see webShape). Outline plate-local; defaults to w × h centered on c. */
+  webPlate(
+    name: string,
+    c: V3,
+    w: number,
+    h: number,
+    opts: { t?: number; color?: number; plane?: 'xy' | 'zy' | 'xz'; rib?: number; cell?: number; seed?: number; outline?: [number, number][]; parent?: THREE.Object3D } = {},
+  ) {
+    const outline = opts.outline ?? [
+      [-w / 2, -h / 2],
+      [w / 2, -h / 2],
+      [w / 2, h / 2],
+      [-w / 2, h / 2],
+    ];
+    const shape = webShape(outline, opts.rib ?? inches(0.3), opts.cell ?? inches(2.6), opts.seed ?? 7);
+    return this.extrude(name, shape, opts.t ?? inches(0.19), machined(opts.color ?? 0x5d636b), opts.plane ?? 'xy', c, opts.parent);
   }
 
   /**

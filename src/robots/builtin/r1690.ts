@@ -8,8 +8,10 @@ import { TURN_RATE, TURN_ACCEL } from '../../robot/schema';
  * 1690 Orbit — KEPLER.
  * Sources: "FRC Orbit 1690 2026 Robot CAD Release" (Onshape + x_t, CAD render), reveal video + Chief Delphi
  * "Orbit 1690 2026 Robot Reveal – KEPLER" (team replies), BehindTheBumpers walkthrough.
- *  - 25 × 29in (the 29in side is the intake side); dark pocketed X-truss perimeter walls; curved pocketed arch over
- *    the top that carries the turret; clear polycarbonate panels on the hopper.
+ *  - 25 × 29in (the 29in side is the intake side); black X-pocketed perimeter walls and an X-truss hopper extension
+ *    that slides out over the intake; curved pocketed arch carrying the turret; clear polycarbonate panels; dark
+ *    web-pocketed chassis plates with light-blue printed parts; arc guard with light-blue fins around the turret; a
+ *    tall carry handle with a triangular loop.
  *  - Turret + shoot-on-the-move that keeps intaking while shooting; spindexer feeding a single channel; roller floor,
  *    vertical roller and guide funnel; shooter wheel recovery ~50 ms at top speed; ~13 BPS counted in the reveal.
  *  - LEVEL 1 climb with closed-loop hooks on the outside of the tower ("for now we stick to the L1 climb").
@@ -19,7 +21,8 @@ const L = inches(25);
 const W = inches(29);
 const H = inches(21);
 const TP: [number, number, number] = [-L / 2 + inches(6), inches(13), 0];
-const DARK = 0xb9bfc7; // bare aluminum truss (photos / CAD)
+const DARK = 0x26292e; // black-anodized X-pocketed plates (CAD)
+const SKY = 0x9cc6ea; // light-blue printed accents (CAD)
 
 export const r1690: BuiltinRobot = {
   def: {
@@ -75,10 +78,13 @@ export const r1690: BuiltinRobot = {
     const wy = y0 + wallH / 2;
     for (const s of [-1, 1]) {
       const z = s * (W / 2 - inches(0.3));
-      kit.truss(`wall_truss_${s}`, [-L / 2 + inches(1), y0, z], [L / 2 - inches(3), y0, z], wallH, { color: DARK, member: inches(0.4), rows: 2 });
+      kit.pocketPlate(`wall_x_${s}`, [-inches(1), wy, z], L - inches(4), wallH, { color: DARK, cell: wallH * 0.95, rib: inches(0.45), t: inches(0.12) });
       kit.box(`wall_poly_${s}`, [-inches(1), wy, s * (W / 2 - inches(0.55))], [L - inches(4), wallH, 0.003], M.polycarb());
     }
-    kit.truss('wall_truss_back', [-L / 2 + inches(0.4), y0, -W / 2 + inches(0.5)], [-L / 2 + inches(0.4), y0, W / 2 - inches(0.5)], wallH, { color: DARK, member: inches(0.4), rows: 2 });
+    kit.pocketPlate('wall_x_back', [-L / 2 + inches(0.4), wy, 0], W - inches(1), wallH, { color: DARK, plane: 'zy', cell: wallH * 0.95, rib: inches(0.45), t: inches(0.12) });
+    // Dark web-pocketed lower chassis plates with light-blue module covers (CAD).
+    for (const s of [-1, 1]) kit.webPlate(`chassis_web${s}`, [0, y0 - inches(0.6), s * (W / 2 + inches(0.1))], L - inches(6), inches(2), { color: 0x4a4f56, cell: inches(1.5), rib: inches(0.2), seed: s > 0 ? 41 : 42 });
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) kit.box('module_cover', [sx * (L / 2 - inches(2.75)), y0 + inches(0.3), sz * (W / 2 - inches(2.75))], [inches(3.6), inches(0.5), inches(3.6)], mat(SKY, { rough: 0.5 }));
     // Curved pocketed arch over the top (front-to-back), carrying the turret.
     const arch = new THREE.Shape();
     const R0 = inches(13);
@@ -123,12 +129,43 @@ export const r1690: BuiltinRobot = {
 
     // ---------- compact gear-driven turret (rests facing backward), yellow printed parts
     kit.cyl('turret_column', [TP[0], (y0 + TP[1]) / 2, TP[2]], inches(2.2), TP[1] - y0, 'y', M.anodBlack());
-    const t = turret(kit, 't', TP, { ringR: inches(4.5), flywheelR: inches(2), flywheelW: inches(3.5), color: 0x1d2026, accent: 0xf2c418 });
-    kit.box('yellow_feed', [TP[0] + inches(2.5), TP[1] + inches(2), TP[2]], [inches(1.6), inches(2.4), inches(3.2)], mat(0xf2c418, { rough: 0.6 }));
+    const t = turret(kit, 't', TP, { ringR: inches(4.5), flywheelR: inches(2), flywheelW: inches(3.5), color: 0x16181b, accent: SKY });
+    // Arc guard around the turret with light-blue printed fins (cable / FUEL guides) on its rim (CAD top view).
+    const guard = new THREE.Mesh(new THREE.TorusGeometry(inches(7.2), inches(0.45), 6, 40, Math.PI * 1.1), mat(0x1b1d21, { rough: 0.6 }));
+    guard.rotation.x = Math.PI / 2;
+    guard.rotation.z = Math.PI * 0.45;
+    guard.position.set(TP[0], TP[1] - inches(1.2), TP[2]);
+    kit.add(guard, 'turret_guard');
+    for (let k = 0; k < 5; k++) {
+      const a = Math.PI * (0.55 + k * 0.22);
+      kit.box(`guard_fin_${k}`, [TP[0] + Math.cos(a) * inches(7.9), TP[1] - inches(0.4), TP[2] - Math.sin(a) * inches(7.9)], [inches(1.6), inches(1.4), inches(0.35)], mat(SKY, { rough: 0.45 }), undefined, [0, a, 0.3]);
+    }
+    // Carry handle: tall gray tube topped by a rounded triangular loop (CAD), kept under the robot height.
+    const hx = inches(1.5);
+    const hz = inches(6.5);
+    kit.cyl('handle_post', [hx, (y0 + H - inches(4)) / 2, hz], inches(0.4), H - inches(4) - y0, 'y', mat(0x7d838b, { metal: 0.7, rough: 0.35 }), undefined, 10);
+    const loop = new THREE.Mesh(new THREE.TorusGeometry(inches(2), inches(0.3), 6, 3), mat(0x7d838b, { metal: 0.7, rough: 0.35 }));
+    loop.position.set(hx, H - inches(2.1), hz);
+    loop.rotation.z = Math.PI / 2;
+    kit.add(loop, 'handle_loop');
+    kit.box('handle_clamp', [hx, y0 + inches(6), hz], [inches(1.6), inches(1.6), inches(1.6)], mat(0x2f5fd0, { metal: 0.4 }));
+    kit.box('feed_block', [TP[0] + inches(2.5), TP[1] + inches(2), TP[2]], [inches(1.6), inches(2.4), inches(3.2)], mat(SKY, { rough: 0.6 }));
+
+    // ---------- X-truss hopper extension: black X-pocketed side frames + front frame that slide out over the intake
+    const EXT = inches(8);
+    const ext = kit.group('hopper_ext');
+    const eTop = H - inches(1.5);
+    const eBot = inches(2.56) + inches(5) + inches(2);
+    const ex1 = L / 2 + EXT;
+    const ex0 = ex1 - inches(12);
+    for (const s of [-1, 1]) kit.pocketPlate(`ext_x_${s}`, [(ex0 + ex1) / 2, (eTop + eBot) / 2, s * (W / 2 - inches(1))], ex1 - ex0, eTop - eBot, { color: DARK, cell: eTop - eBot, rib: inches(0.45), t: inches(0.12), parent: ext });
+    kit.pocketPlate('ext_x_front', [ex1, (eTop + eBot) / 2, 0], W - inches(2), eTop - eBot, { color: DARK, plane: 'zy', cell: (eTop - eBot) * 0.95, rib: inches(0.45), t: inches(0.12), parent: ext });
+    kit.box('ext_poly', [ex1 - inches(0.2), (eTop + eBot) / 2, 0], [0.003, eTop - eBot, W - inches(2.4)], M.polycarb(), ext);
+    for (const c of ext.children) c.position.x -= EXT;
 
     // ---------- fast roller intake (pivot) with kicker
     const ipiv: [number, number, number] = [L / 2 - inches(1.5), y0 + inches(5.5), 0];
-    const intake = groundIntake(kit, 'intake', { bumper: { face: L / 2 + inches(3.25), top: inches(2.56) + inches(5) }, pivot: [ipiv[0], ipiv[1]], rollerX: L / 2 + inches(3.25) + inches(3.5), rollerR: inches(1.4), width: W, roller: 'silicone', wheel: 0xbfc5cc, armColor: DARK, kicker: true });
+    const intake = groundIntake(kit, 'intake', { bumper: { face: L / 2 + inches(3.25), top: inches(2.56) + inches(5) }, pivot: [ipiv[0], ipiv[1]], rollerX: L / 2 + inches(3.25) + inches(3.5), rollerR: inches(1.4), width: W, roller: 'silicone', wheel: 0x2c2f34, armColor: DARK, kicker: true });
     intakeGearbox(kit, 'intake', [ipiv[0], ipiv[1]], -W / 2 + inches(2));
 
     // ---------- LEVEL 1 climber: closed-loop hooks that ride up the outside of the tower
@@ -148,6 +185,7 @@ export const r1690: BuiltinRobot = {
     rig.joint({ id: 'intake', type: 'revolute', driver: 'intake-deploy', pivot: ipiv, axis: [0, 0, 1], stowed: intake.deployAngleDeg + 95, active: 0, speed: 650 }, intake.group);
     rig.joint({ id: 'roll', type: 'spin', driver: 'intake-roller', parent: 'intake', pivot: intake.rollerCenter, axis: [0, 0, 1], speed: 2400 }, intake.roller);
     if (intake.kickerNode) rig.joint({ id: 'intake_kick', type: 'spin', driver: 'intake-roller', parent: 'intake', pivot: intake.kickerCenter!, axis: [0, 0, -1], speed: 2600 }, intake.kickerNode);
+    rig.joint({ id: 'hopper_ext', type: 'prismatic', driver: 'intake-deploy', pivot: [0, 0, 0], axis: [1, 0, 0], stowed: 0, active: EXT, speed: 0.6 }, ext);
     rig.joint({ id: 'floor', type: 'spin', driver: 'indexer', pivot: [L / 2 - inches(2.5), y0 + inches(0.8), 0], axis: [0, 0, 1], speed: 1500 }, 'floor_0');
     rig.joint({ id: 'spindex', type: 'spin', driver: 'indexer', pivot: [SC[0], y0, 0], axis: [0, 1, 0], speed: 720 }, spindex);
     rig.joint({ id: 'vroll', type: 'spin', driver: 'indexer', pivot: [-L / 2 + inches(9.5), 0, inches(5.5)], axis: [0, 1, 0], speed: 1500 }, vroller);

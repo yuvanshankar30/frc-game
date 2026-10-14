@@ -172,7 +172,9 @@ export const r971: BuiltinRobot = {
     storage: {
       capacity: 40,
       preload: 8,
-      box: { center: [(BOX_X0 + BOX_X1) / 2 + inches(2), inches(12.2), 0], size: [BOX_X1 - BOX_X0 + inches(3), inches(17.5), W - inches(2)] },
+      box: { center: [(BOX_X0 + BOX_X1) / 2 + inches(4), inches(12.2), 0], size: [BOX_X1 - BOX_X0 + inches(7), inches(17.5), W - inches(2)] },
+      // Light grid net over the top of the hopper and its extension (reference).
+      net: { stretch: inches(2), color: '#d4d9df' },
     },
     shooter: {
       barrels: [{ exit: [0, 0, 0] }, { exit: [0, 0, 0] }],
@@ -312,10 +314,12 @@ export const r971: BuiltinRobot = {
     kit.camera('cam_front', [BOX_X1 - inches(1), HOP_TOP - inches(1), 0], 0);
     kit.camera('cam_back', [-L / 2 + inches(1), DECK + inches(1), -inches(4)], Math.PI);
 
-    rig.joint({ id: 'intake', type: 'revolute', driver: 'intake-deploy', pivot: ipiv, axis: [0, 0, 1], stowed: intake.deployAngleDeg + 95, active: 0, speed: 520 }, intake.group);
+    // Stowed, the intake folds up inside the extension's front (under the net), not up past the top of the robot.
+    rig.joint({ id: 'intake', type: 'revolute', driver: 'intake-deploy', pivot: ipiv, axis: [0, 0, 1], stowed: intake.deployAngleDeg + 72, active: 0, speed: 520 }, intake.group);
     rig.joint({ id: 'intake_roll', type: 'spin', driver: 'intake-roller', parent: 'intake', pivot: intake.rollerCenter, axis: [0, 0, 1], speed: 2000 }, intake.roller);
     if (intake.kickerNode) rig.joint({ id: 'intake_kick', type: 'spin', driver: 'intake-roller', parent: 'intake', pivot: intake.kickerCenter!, axis: [0, 0, -1], speed: 2400 }, intake.kickerNode);
-    rig.joint({ id: 'hopper_ext', type: 'prismatic', driver: 'intake-deploy', pivot: [0, 0, 0], axis: [1, 0, 0], stowed: -EXT + inches(0.5), active: 0, speed: 0.6 }, hop);
+    // The extension stays out (its look in play); the intake works inside it.
+    rig.joint({ id: 'hopper_ext', type: 'prismatic', driver: 'none', pivot: [0, 0, 0], axis: [1, 0, 0], stowed: 0, active: 0, speed: 0.6 }, hop);
     rig.joint({ id: 'top_roll', type: 'spin', driver: 'indexer', parent: 'hopper_ext', pivot: [ex1 - inches(1.5), HOP_TOP - inches(1.4), 0], axis: [0, 0, 1], speed: 1000 }, topRoller);
     rig.joint({ id: 'floor', type: 'spin', driver: 'indexer', pivot: [BOX_X1 - inches(2), y0 + inches(0.8), 0], axis: [0, 0, 1], speed: 1200 }, 'floor_0');
     seps.forEach((g, k) => rig.joint({ id: `separator${k}`, type: 'spin', driver: 'indexer', pivot: [SEPX, 0, (k ? 1 : -1) * inches(2.4)], axis: [0, k ? -1 : 1, 0], speed: 900 }, g));
