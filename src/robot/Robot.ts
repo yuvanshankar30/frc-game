@@ -7,7 +7,7 @@ import { solveShot, solveSpeed, clearsRim, flightTime, AERO, type ShotSolution, 
 import type { Field } from '../field/rebuilt/Field';
 import type { Alliance } from '../game/scoring';
 import { ALLIANCE_COLOR } from '../field/rebuilt/Field';
-import { TOWER, FUEL, FIELD, HUB } from '../field/rebuilt/dims';
+import { TOWER, FUEL, FIELD, HUB, LANE } from '../field/rebuilt/dims';
 import { DEG, clamp, wrapAngle, approach } from '../util/units';
 import { makeBumpers } from './bumpers';
 import type { FuelSystem } from '../field/fuel';
@@ -84,7 +84,7 @@ export class Robot {
 
   /** All FUEL on board: the physical pile plus any overflow. */
   get carried() {
-    return this.stored.length + this.overflow.length;
+    return this.stored.length + this.overflow.length + this.feedQueue.size;
   }
   readonly stats: RobotStats = { shots: 0, scored: 0, intaked: 0 };
   speeds: ChassisSpeeds = { vx: 0, vz: 0, omega: 0 };
@@ -247,6 +247,21 @@ export class Robot {
       );
     }
     this.buildHopperColliders();
+    if (def.lift) {
+      // The lifting part's real height: a slab on top of the frame that grows with the lift (it's what hits the TRENCH).
+      this.liftCollider = world.createCollider(
+        RAPIER.ColliderDesc.cuboid(f.length / 2 - 0.02, 0.005, f.width / 2 - 0.02)
+          .setTranslation(0, f.height, 0)
+          .setDensity(0)
+          .setFriction(0.2)
+          .setRestitution(MATERIAL.bumper.restitution)
+          .setCollisionGroups(groups(GROUP.ROBOT, ALL)),
+        this.body,
+      );
+      this.liftCollider.setEnabled(false);
+    }
+    // A latching intake deploys at the start of the match and stays down (4414: 'deploys at the beginning of the match').
+    this.intakeLatched = !!def.intake?.latch;
     this.turretYaw = (def.shooter?.barrels ?? []).map(() => 0);
     if (def.shooter?.hoodMin != null) this.hoodAngle = def.shooter.hoodMin;
     else if (def.shooter) this.hoodAngle = def.shooter.angle;
@@ -329,10 +344,19 @@ export class Robot {
       }
       // No spot with clean headroom, but the pile still squeezes a ball into the gaps under its top layer.
       const target = spot ?? this.entryPoint(local.z);
-      const tw = this.toWorld(target, new THREE.Vector3());
-      const T = 0.22;
-      const v = new THREE.Vector3((tw.x - from.x) / T + lv.x, (tw.y - from.y) / T + 0.5 * 9.81 * T, (tw.z - from.z) / T + lv.z);
+      // The rollers pull the ball in low through the intake mouth onto the floor first, then the floor carries it to
+      // its spot (instead of lobbing it straight onto the pile).
+      const { center: hc, size: hs, entrySide } = this.hopper;
+      const mouth = new THREE.Vector3(
+        hc.x + entrySide * (hs.x / 2 - FUEL.radius - 0.02),
+        hc.y - hs.y / 2 + FUEL.radius + 0.01,
+        clamp(local.z, hc.z - hs.z / 2 + FUEL.radius + 0.03, hc.z + hs.z / 2 - FUEL.radius - 0.03),
+      );
+      const mw = this.toWorld(mouth, new THREE.Vector3());
+      const T = Robot.MOUTH_T;
+      const v = new THREE.Vector3((mw.x - from.x) / T + lv.x, (mw.y - from.y) / T + 0.5 * 9.81 * T, (mw.z - from.z) / T + lv.z);
       fuel.store(i, from, v);
+      this.enterVia.set(i, mouth);
       // Fly through the intake/bumper (no collisions) until it reaches its spot in the hopper.
       fuel.colliders[i].setCollisionGroups(groups(GROUP.STORED, 0));
       this.entering.set(i, 0);
@@ -463,8 +487,22 @@ export class Robot {
     return i;
   }
 
+  /** Time for an intaken ball to reach the intake mouth, then to settle onto its spot (s). */
+  private static readonly MOUTH_T = 0.1;
+  private static readonly SETTLE_T = 0.32;
+  /** Feed path timing: pile → indexer, indexer → shooter exit (s). */
+  private static readonly FEED_T1 = 0.08;
+  private static readonly FEED_T2 = 0.06;
+  private static readonly FEED_T3 = 0.05;
   /** FUEL in flight from the intake into the hopper → time since capture. */
   private entering = new Map<number, number>();
+  /** First waypoint (robot frame) of an entering ball: the intake mouth, low on the floor. */
+  private enterVia = new Map<number, THREE.Vector3>();
+  /**
+   * FUEL being fed to the shooter: pulled off the pile to the indexer (leg 0), then carried up to the exit (leg 1) and
+   * launched with the shot settings captured when the indexer took it.
+   */
+  private feedQueue = new Map<number, { t: number; b: number; leg: 0 | 1 | 2; spread: number; wheel: number; moving: boolean }>();
   /** Robot-frame point each entering ball is flying to. */
   private enterTarget = new Map<number, THREE.Vector3>();
 
@@ -474,6 +512,8 @@ export class Robot {
     this.overflow.length = 0;
     this.entering.clear();
     this.enterTarget.clear();
+    this.enterVia.clear();
+    this.feedQueue.clear();
   }
 
   /** Balls that bounced out of the hopper become loose FUEL on the field. */
@@ -487,7 +527,7 @@ export class Robot {
       const inside =
         (!!tgt && lp.distanceTo(tgt) < 0.05) ||
         (t > 0.3 && Math.abs(lp.x - c.x) < s.x / 2 - r && Math.abs(lp.y - c.y) < s.y / 2 - r && Math.abs(lp.z - c.z) < s.z / 2 - r);
-      if (inside || t > 0.6 || fuel.state[i] !== 'stored') {
+      if ((inside && !this.enterVia.has(i)) || t > 0.7 || fuel.state[i] !== 'stored') {
         if (fuel.state[i] === 'stored') {
           if (inside) fuel.colliders[i].setCollisionGroups(groups(GROUP.STORED, GROUP.HOPPER | GROUP.STORED));
           else {
@@ -500,13 +540,20 @@ export class Robot {
         }
         this.entering.delete(i);
         this.enterTarget.delete(i);
+        this.enterVia.delete(i);
       } else {
         this.entering.set(i, t + dt);
-        // Home in on the (moving, rotating) entry point so the ball still lands in the hopper.
-        if (tgt && fuel.state[i] === 'stored') {
-          const tw = this.toWorld(tgt, new THREE.Vector3());
+        // Home in on the (moving, rotating) mouth, then the entry spot, so the ball still lands in the hopper.
+        let via = this.enterVia.get(i);
+        if (via && (t > Robot.MOUTH_T || lp.distanceTo(via) < 0.07)) {
+          this.enterVia.delete(i);
+          via = undefined;
+        }
+        const goal = via ?? tgt;
+        if (goal && fuel.state[i] === 'stored') {
+          const tw = this.toWorld(goal, new THREE.Vector3());
           const p = fuel.position(i);
-          const left = Math.max(0.06, 0.22 - t);
+          const left = via ? Math.max(0.03, Robot.MOUTH_T - t) : Math.max(0.06, Robot.SETTLE_T - t);
           const pv = this.pointVelocity(tw);
           fuel.bodies[i].setLinvel({ x: (tw.x - p.x) / left + pv.x, y: (tw.y - p.y) / left + pv.y + 9.81 * dt, z: (tw.z - p.z) / left + pv.z }, true);
         }
@@ -897,9 +944,47 @@ export class Robot {
     return err;
   }
 
+  /** Height of the lifting part above the frame (m), and its collider. */
+  liftPos = 0;
+  private liftCollider: RAPIER.Collider | null = null;
+  /** Driver is asking for a shot (or has the flywheel toggled on): the hood stays up. */
+  private shootHeld = false;
+
+  /**
+   * Within `dist` of a TRENCH underpass and driving toward it (or already under it), as in 1678's auto-tuck: the four
+   * underpasses sit on each HUB's bump line, against the guardrails.
+   */
+  private nearTrench(dist: number) {
+    const p = this.body.translation();
+    const v = this.body.linvel();
+    for (const sx of [-1, 1])
+      for (const sz of [-1, 1]) {
+        const tx = sx * HUB.centerX;
+        const tz = sz * LANE.trenchClearCenterZ;
+        const dx = tx - p.x;
+        const dz = tz - p.z;
+        const d = Math.hypot(dx, dz);
+        if (d < this.halfLength + 0.35) return true;
+        if (d <= dist && dx * v.x + dz * v.z > 0 && Math.abs(v.x) > 0.05) return true;
+      }
+    return false;
+  }
+
+  private stepLift(dt: number) {
+    const lift = this.def.lift;
+    if (!lift || !this.liftCollider) return;
+    const target = this.nearTrench(lift.distance) ? lift.trench : lift.height;
+    this.liftPos = approach(this.liftPos, target, lift.speed * dt);
+    const hy = Math.max(0.005, this.liftPos / 2);
+    this.liftCollider.setEnabled(this.liftPos > 0.01);
+    this.liftCollider.setHalfExtents({ x: this.def.frame.length / 2 - 0.02, y: hy, z: this.def.frame.width / 2 - 0.02 });
+    this.liftCollider.setTranslationWrtParent({ x: 0, y: this.def.frame.height - 0.015 + hy, z: 0 });
+  }
+
   private stepMechanisms(cmd: RobotCommand, ctx: RobotContext, dt: number) {
     const def = this.def;
     const canAct = this.climb === 'none';
+    this.stepLift(dt);
     // Intake deploy / rollers.
     const intaking = canAct && (cmd.intake || cmd.eject) && !!def.intake;
     this.intakeOn = approach(this.intakeOn, intaking ? 1 : 0, dt * 6);
@@ -908,6 +993,7 @@ export class Robot {
     if (cmd.rev) this.revOn = !this.revOn;
     if (!ctx.expert) this.revOn = false;
     const wantSpin = canAct && !!def.shooter && (ctx.expert ? this.revOn : cmd.shoot);
+    this.shootHeld = wantSpin;
     this.spin = approach(this.spin, wantSpin ? 1 : 0, dt * (wantSpin ? 3.5 : 1.2));
 
     this.fuel = ctx.field.fuel;
@@ -930,6 +1016,8 @@ export class Robot {
       if (cmd.eject) this.runEject(ctx, dt);
     }
     if (def.shooter && canAct && cmd.shoot && aim) this.runShooter(ctx, aim, dt);
+    // FUEL already taken by the indexer keeps moving to the shooter and fires even if Shoot was just released.
+    if (def.shooter) this.stepFeeding(ctx.field.fuel, dt);
     else this.shotReady = false;
     this.feeding = canAct && !!def.shooter && cmd.shoot && (ctx.expert || this.spin > 0.8) && this.carried > 0;
     if (this.feeding) this.agitate(ctx.field.fuel, dt);
@@ -971,6 +1059,9 @@ export class Robot {
       }
       case 'climber':
         jt.target = this.climb === 'none' ? d.stowed : d.active;
+        break;
+      case 'lift':
+        jt.target = d.stowed + this.liftPos;
         break;
       case 'wheel': {
         const v = Math.hypot(this.speeds.vx, this.speeds.vz) + Math.abs(this.speeds.omega) * 0.3;
@@ -1080,7 +1171,9 @@ export class Robot {
     for (let b = 0; b < results.length; b++) {
       this.turretYaw[b] = approach(this.turretYaw[b] ?? 0, results[b].yaw, sh.turretSpeed * DEG * dt);
     }
-    this.hoodAngle = approach(this.hoodAngle, results[0].elev / DEG, 240 * dt);
+    // A hood that stows when idle folds down to its lowest angle until the driver asks for a shot.
+    const hoodGoal = sh.hoodStowsIdle && sh.hoodMin !== null && !this.shootHeld ? sh.hoodMin : results[0].elev / DEG;
+    this.hoodAngle = approach(this.hoodAngle, hoodGoal, 240 * dt);
     return this.aimCache;
   }
 
@@ -1280,6 +1373,100 @@ export class Robot {
     return new THREE.Vector3(lv.x + av.y * rz - av.z * ry, lv.y + av.z * rx - av.x * rz, lv.z + av.x * ry - av.y * rx);
   }
 
+  /** Robot-frame point where barrel b's indexer takes FUEL off the hopper floor (under / nearest its exit). */
+  private feedEntry(b: number) {
+    const { center: c, size: s } = this.hopper;
+    const r = FUEL.radius;
+    const ex = this.exitLocal(b);
+    return new THREE.Vector3(clamp(ex.x, c.x - s.x / 2 + r + 0.02, c.x + s.x / 2 - r - 0.02), c.y - s.y / 2 + r + 0.01, clamp(ex.z, c.z - s.z / 2 + r + 0.02, c.z + s.z / 2 - r - 0.02));
+  }
+
+  /** Barrel b's exit point (robot frame) at the current turret angle. */
+  private exitLocal(b: number) {
+    const barrel = this.def.shooter!.barrels[b];
+    const turret = this.turretYaw[b] ?? 0;
+    const ex = barrel.exit[0] - barrel.pivot[0];
+    const ez = barrel.exit[2] - barrel.pivot[2];
+    const c = Math.cos(turret);
+    const s = Math.sin(turret);
+    return new THREE.Vector3(barrel.pivot[0] + ex * c + ez * s, barrel.exit[1], barrel.pivot[2] - ex * s + ez * c);
+  }
+
+  /** Each barrel's flywheel (the 'shooter-wheel' joint nearest its exit), found once. */
+  private barrelWheels: (JointRT | null)[] | null = null;
+
+  /**
+   * Robot-frame point where FUEL meets barrel b's flywheel: just under / behind the wheel on the way to the exit, read
+   * from the joint itself so it follows a turning turret.
+   */
+  private flywheelVia(b: number) {
+    const sh = this.def.shooter!;
+    if (!this.barrelWheels) {
+      const wheels = [...this.assembly.joints.values()].filter((j) => j.def.driver === 'shooter-wheel');
+      this.barrelWheels = sh.barrels.map((br) => {
+        let best: JointRT | null = null;
+        let bestD = Infinity;
+        for (const j of wheels) {
+          const d = (j.def.pivot[0] - br.exit[0]) ** 2 + (j.def.pivot[1] - br.exit[1]) ** 2;
+          if (d < bestD) {
+            bestD = d;
+            best = j;
+          }
+        }
+        return best;
+      });
+    }
+    const exit = this.exitLocal(b);
+    const jt = this.barrelWheels[b];
+    if (!jt) return exit;
+    const c = this.visual.worldToLocal(jt.pivot.getWorldPosition(new THREE.Vector3()));
+    // Pass the wheel on the side away from the exit's height: under a top-mounted wheel, at its rim otherwise.
+    const below = c.y >= exit.y - 0.02 ? -0.08 : 0.06;
+    return new THREE.Vector3(c.x, c.y + below, exit.z);
+  }
+
+  /** Move FUEL along the feed path (pile → indexer → past the flywheel → exit) and launch it at the exit. */
+  private stepFeeding(fuel: FuelSystem, dt: number) {
+    if (!this.feedQueue.size) return;
+    const tw = new THREE.Vector3();
+    const T1 = Robot.FEED_T1;
+    const T2 = T1 + Robot.FEED_T2;
+    const T3 = T2 + Robot.FEED_T3;
+    for (const [i, f] of this.feedQueue) {
+      f.t += dt;
+      if (fuel.state[i] !== 'stored') {
+        this.feedQueue.delete(i);
+        continue;
+      }
+      const goal = f.leg === 0 ? this.feedEntry(f.b) : f.leg === 1 ? this.flywheelVia(f.b) : this.exitLocal(f.b);
+      this.toWorld(goal, tw);
+      const p = fuel.position(i);
+      const d = Math.hypot(tw.x - p.x, tw.y - p.y, tw.z - p.z);
+      if (f.leg === 0 && (d < 0.06 || f.t > T1)) f.leg = 1;
+      else if (f.leg === 1 && (d < 0.05 || f.t > T2)) f.leg = 2;
+      else if (f.leg === 2 && (d < 0.05 || f.t > T3)) {
+        this.launch(fuel, i, f);
+        this.feedQueue.delete(i);
+        continue;
+      }
+      const left = Math.max(0.025, (f.leg === 0 ? T1 : f.leg === 1 ? T2 : T3) - f.t);
+      const pv = this.pointVelocity(tw);
+      fuel.bodies[i].setLinvel({ x: (tw.x - p.x) / left + pv.x, y: (tw.y - p.y) / left + pv.y + 9.81 * dt, z: (tw.z - p.z) / left + pv.z }, true);
+    }
+  }
+
+  private launch(fuel: FuelSystem, i: number, f: { b: number; spread: number; wheel: number; moving: boolean }) {
+    const aim = this.aimCache;
+    if (!aim) return;
+    const { pos, vel, spin } = this.launchState(f.b, aim.barrels[f.b], f.spread, f.wheel);
+    fuel.place(i, pos, vel, this.id, spin);
+    this.stats.shots++;
+    if (f.moving) {
+      this.stats.movingShots = (this.stats.movingShots ?? 0) + 1;
+      this.movingBalls.add(i);
+    } else this.movingBalls.delete(i);
+  }
+
   /** Balls this robot last fired while moving (so a score can be credited to the on-the-move stat). */
   readonly movingBalls = new Set<number>();
 
@@ -1288,7 +1475,10 @@ export class Robot {
     this.fireTimer -= dt;
     // Not ready: don't bank shots while spinning up, empty, or lining up. In expert mode the indexer feeds whenever
     // it's told to, into whatever the wheel is doing (a stalled wheel just drops FUEL out).
-    const ready = ctx.expert ? this.carried > 0 : this.spin >= 0.85 && this.carried > 0 && (!ctx.assist || this.aimSettled(aim, ctx));
+    // Some robots' code only takes HUB shots below a drive speed (1678: 1 m/s; 2910: 0.15 m/s); passing isn't gated.
+    const lvNow = this.body.linvel();
+    const tooFast = sh.maxScoreSpeed !== null && !this.shuttling && Math.hypot(lvNow.x, lvNow.z) > sh.maxScoreSpeed;
+    const ready = ctx.expert ? this.carried > 0 : this.spin >= 0.85 && this.carried > 0 && !tooFast && (!ctx.assist || this.aimSettled(aim, ctx));
     // The HUD's ready light still means "a shot now would be at full speed".
     this.shotReady = ready && this.spin >= 0.85;
     if (!ready) {
@@ -1311,16 +1501,14 @@ export class Robot {
       const b = this.barrel % sh.barrels.length;
       this.barrel++;
       const wheel = (ctx.expert ? this.spin : 1) * (1 + gauss() * speedErr);
-      const { pos, vel, spin } = this.launchState(b, aim.barrels[b], Math.hypot(sh.spread, motionDeg) * DEG, wheel);
-      const ex = sh.barrels[b].exit;
-      const i = this.takeStored(ctx.field.fuel, { x: ex[0], y: this.hopper.center.y - this.hopper.size.y / 2, z: ex[2] });
+      const fuel = ctx.field.fuel;
+      const entry = this.feedEntry(b);
+      const i = this.takeStored(fuel, entry);
       if (i < 0) break;
-      ctx.field.fuel.place(i, pos, vel, this.id, spin);
-      this.stats.shots++;
-      if (moving) {
-        this.stats.movingShots = (this.stats.movingShots ?? 0) + 1;
-        this.movingBalls.add(i);
-      } else this.movingBalls.delete(i);
+      // A ball carried out of sight (packed hopper) appears at the indexer.
+      if (fuel.state[i] !== 'stored') fuel.store(i, this.toWorld(entry, new THREE.Vector3()), this.pointVelocity(this.toWorld(entry, new THREE.Vector3())));
+      fuel.colliders[i].setCollisionGroups(groups(GROUP.STORED, 0));
+      this.feedQueue.set(i, { t: 0, b, leg: 0, spread: Math.hypot(sh.spread, motionDeg) * DEG, wheel, moving });
       fired++;
     }
     if (this.fireTimer < 0) this.fireTimer = 0;

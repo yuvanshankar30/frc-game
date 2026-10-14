@@ -172,9 +172,9 @@ export const r971: BuiltinRobot = {
     storage: {
       capacity: 40,
       preload: 8,
-      box: { center: [(BOX_X0 + BOX_X1) / 2 + inches(4), inches(12.2), 0], size: [BOX_X1 - BOX_X0 + inches(7), inches(17.5), W - inches(2)] },
+      box: { center: [(BOX_X0 + BOX_X1) / 2 + inches(2.25), inches(12.2), 0], size: [BOX_X1 - BOX_X0 + inches(3.5), inches(17.5), W - inches(2)] },
       // Light grid net over the top of the hopper and its extension (reference).
-      net: { stretch: inches(2), color: '#d4d9df' },
+      net: { stretch: inches(2), color: '#4a5058' },
     },
     shooter: {
       barrels: [{ exit: [0, 0, 0] }, { exit: [0, 0, 0] }],

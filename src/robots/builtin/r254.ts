@@ -1,3 +1,4 @@
+import * as THREE from 'three';
 import { Kit, M, mat } from './kit';
 import { swerveBase, Rig, type BuiltinRobot } from './common';
 import { inches } from '../../util/units';
@@ -44,7 +45,8 @@ export const r254: BuiltinRobot = {
     storage: {
       capacity: 50,
       preload: 8,
-      box: { center: [inches(2.5), inches(11.3), 0], size: [inches(21), inches(17.6), W - inches(1.8)] },
+      // Inside the blue box (ahead of the shooter tower).
+      box: { center: [inches(3.5), inches(11.3), 0], size: [inches(19), inches(17.6), W - inches(1.8)] },
       net: { stretch: inches(1.5), color: '#0d0e10' },
     },
     shooter: {
@@ -119,17 +121,33 @@ export const r254: BuiltinRobot = {
     const carriage = kit.group('intake_carriage', slide);
     const tubeBlue = mat(BLUE, { metal: 0.5, rough: 0.35 });
     const iz = W / 2 - inches(0.8);
-    const rollC: [number, number, number] = [face + inches(5.5), inches(1.6), 0];
-    const topC: [number, number, number] = [face + inches(3.2), inches(4.4), 0];
+    const rollC: [number, number, number] = [face + inches(5.5), inches(2.1), 0];
+    const topC: [number, number, number] = [face + inches(3.4), inches(4.9), 0];
     kit.tubeRoller('intake_roller', rollC[0], rollC[1], -iz + inches(0.5), iz - inches(0.5), inches(0.85), 0xb9bec6, carriage);
     kit.tubeRoller('intake_top', topC[0], topC[1], -iz + inches(0.5), iz - inches(0.5), inches(0.7), 0x1b1c20, carriage);
-    const knee: [number, number, number] = [face + inches(0.6), bumperTop + inches(1.6), 0];
+    // The legs end at the bottom front corner of the hopper extension, which slides out with the intake.
+    const extFront = face + inches(5.2);
+    const knee: [number, number, number] = [extFront - inches(0.6), bumperTop + inches(0.9), 0];
     for (const s of [-1, 1]) {
       const z = s * iz;
       // Blue 1in tube leg from the roller up and back over the bumper, a short black side plate carrying both rollers.
       kit.tube(`intake_leg${s}`, [rollC[0], rollC[1], z], [knee[0], knee[1], z], [inches(1), inches(1)], carriage, tubeBlue);
-      kit.tube(`intake_rail${s}`, [knee[0], knee[1], z], [L / 2 - inches(4), knee[1], z], [inches(1), inches(1)], carriage, tubeBlue);
-      kit.box(`intake_plate${s}`, [(rollC[0] + topC[0]) / 2, (rollC[1] + topC[1]) / 2 + inches(0.3), z + s * inches(0.6)], [inches(4.4), inches(4.4), inches(0.19)], M.anodBlack(), carriage, [0, 0, 0.5]);
+
+      // Black side plate tying the roller, the top roller and the knee together along the leg (kept off the carpet).
+      const ps = new THREE.Shape();
+      const outline: [number, number][] = [
+        [rollC[0] + inches(1.1), rollC[1]],
+        [rollC[0] + inches(0.3), inches(1.1)],
+        [rollC[0] - inches(1.4), inches(1.1)],
+        [knee[0] - inches(0.5), knee[1] - inches(1.2)],
+        [knee[0] + inches(0.6), knee[1] + inches(0.6)],
+        [topC[0] + inches(1.2), topC[1] + inches(1)],
+      ];
+      outline.forEach(([x, y], k) => (k ? ps.lineTo(x, y) : ps.moveTo(x, y)));
+      ps.closePath();
+      const pg = new THREE.ExtrudeGeometry(ps, { depth: inches(0.19), bevelEnabled: false });
+      pg.translate(0, 0, z + s * inches(0.6) - inches(0.095));
+      kit.add(new THREE.Mesh(pg, M.anodBlack()), `intake_plate${s}`, carriage);
       kit.cyl(`intake_bearing${s}`, [rollC[0], rollC[1], z + s * inches(0.75)], inches(0.45), inches(0.15), 'z', M.steel(), carriage, 14);
       // Black toothed rack (polycarbonate) above the bumper, through the bumper gap into the frame.
       const r0 = L / 2 - inches(9) + EXT;
@@ -142,6 +160,21 @@ export const r254: BuiltinRobot = {
       kit.motor(`rack_motor${s}`, [L / 2 - inches(3), ry + inches(2.2), s * (W / 2 - inches(3.6))], 'z', undefined, true);
       kit.pulley(`rack_pinion${s}`, [L / 2 - inches(3), ry + inches(1.3), rz], inches(0.55), { color: 0x2a2d33 });
     }
+    // Smoked hopper extension (same smoke as the box) riding on the slide: sides + front panel over the mouth, black
+    // edge angles, overlapping the fixed box walls.
+    const exX0 = L / 2 - inches(6);
+    const exTop = H - inches(1);
+    const exBot = bumperTop + inches(0.4);
+    for (const s of [-1, 1]) {
+      const z = s * (W / 2 - inches(0.05));
+      kit.box(`ext_side${s}`, [(exX0 + extFront) / 2, (exBot + exTop) / 2, z], [extFront - exX0, exTop - exBot, 0.003], M.smokeDark(), slide);
+      kit.box(`ext_edge_top${s}`, [(exX0 + extFront) / 2, exTop, z], [extFront - exX0, inches(0.6), inches(0.6)], M.anodBlack(), slide);
+      kit.box(`ext_edge_bot${s}`, [(exX0 + extFront) / 2, exBot, z], [extFront - exX0, inches(0.6), inches(0.6)], M.anodBlack(), slide);
+      kit.box(`ext_edge_front${s}`, [extFront, (exBot + exTop) / 2, z], [inches(0.6), exTop - exBot, inches(0.6)], M.anodBlack(), slide);
+    }
+    kit.box('ext_front', [extFront, (exBot + inches(2.5) + exTop) / 2, 0], [0.003, exTop - exBot - inches(2.5), W - inches(0.1)], M.smokeDark(), slide);
+    kit.box('ext_front_lip', [extFront, exBot + inches(2.5), 0], [inches(0.6), inches(0.6), W - inches(0.1)], M.anodBlack(), slide);
+    kit.box('ext_bottom_bar', [extFront - inches(0.6), exBot, 0], [inches(1), inches(1), W - inches(0.1)], tubeBlue, slide);
     kit.motor('intake_motor', [topC[0] - inches(2.2), topC[1] + inches(1.8), iz - inches(1.6)], 'z', carriage, true);
     kit.belt('intake_belt', [topC[0] - inches(2.2), topC[1] + inches(1.8)], [rollC[0], rollC[1]], iz - inches(0.6), carriage);
     for (const c of slide.children) if (c !== carriage) c.position.x -= EXT;

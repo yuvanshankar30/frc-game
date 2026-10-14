@@ -45,7 +45,8 @@ export const r1690: BuiltinRobot = {
     storage: {
       capacity: 48,
       preload: 8,
-      box: { center: [inches(1.5), inches(10.6), 0], size: [inches(22), inches(15.5), W - inches(2)] },
+      // Ahead of the turret column so carried FUEL doesn't pass through it.
+      box: { center: [inches(4.2), inches(10.6), 0], size: [inches(16.6), inches(15.5), W - inches(2)] },
       indexer: { mode: 'rotor', center: [-inches(3.5), 0], rps: 2 },
     },
     shooter: {

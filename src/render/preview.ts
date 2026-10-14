@@ -124,7 +124,7 @@ export class RobotPreview {
         const d = jt.def;
         if (d.driver === 'intake-deploy') jt.target = phase ? d.active : d.stowed;
         else if (d.driver === 'turret') jt.target = d.stowed + Math.sin(this.t * 0.6) * 60;
-        else if (d.type === 'spin') jt.target = d.driver === 'wheel' ? 0 : 0.4;
+        else if (d.type === 'spin') jt.target = d.driver === 'wheel' || d.driver === 'intake-roller' ? 0 : 0.4;
         else if (d.driver === 'hood') jt.target = d.stowed + (Math.sin(this.t) * 0.5 + 0.5) * (d.active - d.stowed);
         stepJoint(jt, dt);
       }

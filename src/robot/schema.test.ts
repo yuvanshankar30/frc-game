@@ -46,13 +46,16 @@ describe('built-in robots', () => {
       expect(def.sources.length).toBeGreaterThan(0);
     }
   });
-  it('each hopper box can physically hold its stated capacity (random packing ~0.6)', () => {
+  // The drawn hopper box stays inside the robot's walls (so carried FUEL never shows through parts); capacity is what
+  // the robot is rated for (#10), and whatever the box can't hold is carried out of sight. The box should still hold a
+  // good share of it.
+  it('each hopper box holds at least half its stated capacity (random packing ~0.6)', () => {
     const ballVol = (4 / 3) * Math.PI * (0.0750) ** 3;
     for (const b of BUILTINS) {
       const { def } = buildBuiltin(b);
       const box = def.storage.box!;
       const fits = Math.floor((box.size[0] * box.size[1] * box.size[2] * 0.6) / ballVol);
-      expect(fits, `${def.name}: box fits ${fits}, capacity ${def.storage.capacity}`).toBeGreaterThanOrEqual(def.storage.capacity);
+      expect(fits, `${def.name}: box fits ${fits}, capacity ${def.storage.capacity}`).toBeGreaterThanOrEqual(def.storage.capacity * 0.5);
     }
   });
 });

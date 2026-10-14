@@ -2,7 +2,6 @@ import * as THREE from 'three';
 import { Kit, M, mat } from './kit';
 import { swerveBase, groundIntake, intakeGearbox, Rig, type BuiltinRobot } from './common';
 import { inches } from '../../util/units';
-import { TURN_RATE, TURN_ACCEL } from '../../robot/schema';
 
 /**
  * 2910 Jack in the Bot — Re•Blitz (2026 World Championship Finalist, Newton captain).
@@ -39,7 +38,7 @@ export const r2910: BuiltinRobot = {
     highlights: ['2026 Championship Finalist', '30+ BPS (34 sustained), 4 balls wide', 'Shoots forward over the hopper', 'Slapdown with 2x2 bash bar', 'Tinted one-piece sliding hopper', 'No climber (none in code)'],
     sources: ['2910 Tech Binder 2026: Reblitz (Chief Delphi CAD + tech binder release)', 'github.com/FRCTeam2910/2026CompetitionRobot-Public (Constants.java)', 'frcteam2910.org: "We Rebuilt our Robot. Then we went to Einstein."'],
     frame: { length: L, width: W, height: H, mass: 61, comHeight: 0.16, bumperThickness: inches(4), bumperHeight: inches(5.5) },
-    drivetrain: { type: 'swerve', maxSpeed: 3.9, maxAccel: 11, maxOmega: TURN_RATE, maxAlpha: TURN_ACCEL },
+    drivetrain: { type: 'swerve', maxSpeed: 3.9, maxAccel: 11, maxOmega: 14.5, maxAlpha: 45 }, // max angular = max speed / wheelbase radius (ReBlitz config)
     intake: {
       zones: [{ center: [L / 2 + inches(9), inches(3.5), 0], size: [inches(7), inches(7), W - inches(1)] }],
       rate: 24,
@@ -48,7 +47,8 @@ export const r2910: BuiltinRobot = {
     storage: {
       capacity: 58,
       preload: 8,
-      box: { center: [inches(3.5), inches(10.7), 0], size: [inches(28), inches(15.5), W - inches(1.8)] },
+      // Inside the stowed hopper walls (behind its front, ahead of the tower) so carried FUEL never shows through.
+      box: { center: [inches(1.7), inches(10.7), 0], size: [inches(15.4), inches(15.5), W - inches(1.8)] },
     },
     shooter: {
       barrels: [-1.5, -0.5, 0.5, 1.5].map((k) => ({ exit: [-L / 2 + inches(7), inches(20.4), k * inches(5.6)] as [number, number, number], pivot: [0, 0, 0] as [number, number, number] })),
@@ -65,6 +65,7 @@ export const r2910: BuiltinRobot = {
       yawOffset: 0,
       sotm: true,
       sotmSkill: 0.6, // strafes sideways past the HUB on its side intakes while shooting
+      maxScoreSpeed: 0.15, // SuperStructure.SCORING_ON_MOVE_SPEED_TOLERANCE (passing is effectively ungated)
     },
     climber: null,
     source: 'builtin:2910',
@@ -96,7 +97,8 @@ export const r2910: BuiltinRobot = {
       kit.webPlate(`tower_plate${s}`, [TX, inches(11.5), s * (W / 2 - inches(0.6))], 0, 0, { outline: towerOutline, cell: inches(1.9), rib: inches(0.24), t: inches(0.25), color: 0x8d939b, seed: s > 0 ? 5 : 6 });
       kit.webPlate(`tower_plate_out${s}`, [TX - inches(0.5), inches(10), s * (W / 2 + inches(0.45))], inches(8), inches(13), { cell: inches(2.1), rib: inches(0.24), color: 0x7f858d, seed: s > 0 ? 8 : 9 });
     }
-    kit.box('tower_backing', [TX - inches(3.5), inches(11), 0], [inches(0.25), inches(16), W - inches(1.4)], mat(0xeeeeee, { rough: 0.3 }));
+    // Back of the tower: dark web-pocketed plate (the rear view shows framing, rollers and the Krakens, not a white panel).
+    kit.webPlate('tower_backing', [TX - inches(3.6), inches(11), 0], W - inches(1.4), inches(16), { plane: 'zy', color: 0x3a3e44, cell: inches(3), rib: inches(0.3), seed: 17 });
     const drumC: [number, number, number] = [TX - inches(1), inches(17.5), 0];
     const drum = kit.drum('drum', drumC[0], drumC[1], W - inches(1.8), inches(2));
     const fly = kit.group('flywheel6');

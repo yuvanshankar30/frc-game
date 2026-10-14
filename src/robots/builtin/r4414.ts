@@ -54,7 +54,8 @@ export const r4414: BuiltinRobot = {
     storage: {
       capacity: 88,
       preload: 8,
-      box: { center: [(-L / 2 + inches(1) + L / 2 + EXT - inches(1)) / 2, inches(11.85), 0], size: [L + EXT - inches(2), inches(18.3), W - inches(1.5)] },
+      // Back wall to just past the bumper face: ahead of that the extension has no floor (FUEL rolls in under its panel).
+      box: { center: [(-L / 2 + inches(1) + L / 2 + inches(4.5)) / 2, inches(11.85), 0], size: [L + inches(3.5), inches(18.3), W - inches(1.5)] },
       net: { stretch: inches(5), color: '#101114' },
       indexer: { mode: 'rotor', center: [-inches(1.5), inches(1)], rps: 2.25 },
     },

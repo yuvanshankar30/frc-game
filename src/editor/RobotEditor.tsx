@@ -26,6 +26,7 @@ const DRIVER_HELP: Record<string, string> = {
   turret: 'Follows the turret aim (value = stowed + turret yaw)',
   hood: 'Follows the hood angle (hoodMin → stowed, hoodMax → active)',
   climber: 'Moves stowed → active while climbing',
+  lift: 'Follows the lift height (raised in play, tucked for the TRENCH)',
   wheel: 'Spins with drive speed',
   steer: 'Swerve module azimuth (yaw axis), follows module angle',
 };

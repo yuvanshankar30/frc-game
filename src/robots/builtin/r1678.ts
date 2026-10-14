@@ -2,7 +2,6 @@ import * as THREE from 'three';
 import { Kit, M, mat } from './kit';
 import { swerveBase, groundIntake, intakeGearbox, Rig, type BuiltinRobot } from './common';
 import { inches } from '../../util/units';
-import { TURN_RATE, TURN_ACCEL } from '../../robot/schema';
 
 /**
  * 1678 Citrus Circuits — Limestone (two-time district winner, Milstein division champion, Einstein).
@@ -42,7 +41,7 @@ export const r1678: BuiltinRobot = {
     highlights: ['Milstein division champion', 'Ball tunnel + 3.5in grip-tape drum', 'Hood 17.5–52.5° (X44 jackshaft)', 'Climber lifts the hopper roof', 'LEVEL 1 climb', '21 Kraken motors'],
     sources: ['citruscircuits.org/2026-robot (design write-up)', '1678 CAD release renderings (Limestone Extended / Retracted / Hood)', 'github.com/frc1678/C2026-Public (constants)'],
     frame: { length: L, width: W, height: H, mass: 61, comHeight: 0.17, bumperThickness: inches(3.5), bumperHeight: inches(5) },
-    drivetrain: { type: 'swerve', maxSpeed: 4.4, maxAccel: 11, maxOmega: TURN_RATE, maxAlpha: TURN_ACCEL },
+    drivetrain: { type: 'swerve', maxSpeed: 4.4, maxAccel: 11, maxOmega: 11.0, maxAlpha: 50 }, // DriveConstants.kMaxAngularRate / kMaxAngularAcceleration
     intake: {
       zones: [{ center: [L / 2 + inches(9), inches(3.5), 0], size: [inches(7), inches(7), W - inches(1)] }],
       rate: 22,
@@ -51,7 +50,8 @@ export const r1678: BuiltinRobot = {
     storage: {
       capacity: 55,
       preload: 8,
-      box: { center: [inches(3.2), inches(11.5), 0], size: [inches(22), inches(18), W - inches(1.8)] },
+      // Inside the walls (ahead of the ball tunnel, behind the stowed front panel) so carried FUEL never shows through.
+      box: { center: [inches(4.5), inches(11.5), 0], size: [inches(16.6), inches(18), W - inches(1.8)] },
     },
     shooter: {
       barrels: [-1.5, -0.5, 0.5, 1.5].map((k) => ({ exit: [-L / 2 - inches(2), inches(19.5), k * inches(5.6)] as [number, number, number], pivot: [0, 0, 0] as [number, number, number] })),
@@ -68,8 +68,14 @@ export const r1678: BuiltinRobot = {
       yawOffset: 180,
       sotm: true,
       sotmSkill: 0.4, // a dumper: stops to unload the drum
+      maxScoreSpeed: 1.0, // SuperstructureConstants.MAX_SOTM_SPEED
+      hoodStowsIdle: true, // Hood.STOW = kMinAngle (17.5°) when not shooting
     },
     climber: { maxLevel: 1, climbTime: 2.5, canAutoClimb: true },
+    // The climber elevator carries the hopper roof: up 8.25in in play (kMaxPosition), auto-tucked within 1.5m of a
+    // TRENCH (AutoTuckConstants) to its TRENCH setpoint. The modeled frame top already sits ~3in over the real stowed
+    // roof, so the 3.5in TRENCH setpoint maps to +0.5in here (still under the 22.25in arm).
+    lift: { height: inches(8.25), trench: inches(0.5), distance: 1.5, speed: 0.3 },
     source: 'builtin:1678',
   },
   build() {
@@ -232,7 +238,7 @@ export const r1678: BuiltinRobot = {
     rig.joint({ id: 'feeder', type: 'spin', driver: 'indexer', pivot: [-L / 2 + inches(5.6), inches(15.6), 0], axis: [0, 0, -1], speed: 1500 }, feeder);
     rig.joint({ id: 'drum', type: 'spin', driver: 'shooter-wheel', pivot: drumC, axis: [0, 0, -1], speed: 3400 }, drum);
     rig.joint({ id: 'hood', type: 'revolute', driver: 'hood', pivot: hp, axis: [0, 0, 1], active: -35, speed: 180 }, hood);
-    rig.joint({ id: 'climber', type: 'prismatic', driver: 'climber', pivot: [-L / 2 + inches(10.2), H, 0], axis: [0, 1, 0], active: inches(8.25), speed: 0.3 }, climb);
+    rig.joint({ id: 'climber', type: 'prismatic', driver: 'lift', pivot: [-L / 2 + inches(10.2), H, 0], axis: [0, 1, 0], active: inches(8.25), speed: 0.3 }, climb);
     const zones = [{ center: [intake.rollerCenter[0] + inches(1), inches(3.5), 0] as [number, number, number], size: [inches(6), inches(7), W - inches(1)] as [number, number, number] }];
     return { model: kit.root, joints: rig.joints, parts: rig.parts, patch: { intake: { ...r1678.def.intake!, zones } } };
   },

@@ -10,11 +10,11 @@ import { z } from 'zod';
 const vec3 = z.tuple([z.number(), z.number(), z.number()]);
 
 /**
- * Typical competition swerve turn rate: about one rotation per second (teams cap teleop rotation well below the
- * modules' free-speed limit so the robot stays controllable), reached in about a third of a second.
+ * Default swerve turn rate and angular acceleration, from released 2026 code: 1678 runs 11.0 rad/s at 50 rad/s², 2910
+ * its max speed over the wheelbase radius (~14.6 rad/s). Robots without published numbers get ~1.6 rot/s.
  */
-export const TURN_RATE = 2 * Math.PI;
-export const TURN_ACCEL = 18;
+export const TURN_RATE = 10; // rad/s (~1.6 rot/s): top 2026 swerves run 11-15 (1678 11.0, 2910 ~14.6 from code)
+export const TURN_ACCEL = 40; // rad/s² (1678: 50)
 
 export const JOINT_DRIVERS = [
   'none',
@@ -25,6 +25,7 @@ export const JOINT_DRIVERS = [
   'turret',
   'hood',
   'climber',
+  'lift',
   'wheel',
   'steer',
 ] as const;
@@ -157,6 +158,10 @@ export const robotSchema = z.object({
        * lag, chassis vibration, turret / hood tracking); 1 is an elite shoot-on-the-move robot, 0 one that has to stop.
        */
       sotmSkill: z.number().min(0).max(1).default(0.5),
+      /** Fastest the robot may drive (m/s) and still take a HUB shot (its code's gate); null = no limit. Passing is never limited. */
+      maxScoreSpeed: z.number().positive().nullable().default(null),
+      /** The hood folds down to its lowest angle whenever the robot isn't shooting. */
+      hoodStowsIdle: z.boolean().default(false),
     })
     .nullable()
     .default(null),
@@ -168,6 +173,24 @@ export const robotSchema = z.object({
       climbTime: z.number().positive().default(4),
       /** Whether this robot can climb in AUTO (only LEVEL 1 counts in AUTO). */
       canAutoClimb: z.boolean().default(true),
+    })
+    .nullable()
+    .default(null),
+
+  /**
+   * A part that rises above the frame in play (a telescoping hopper roof, say) and tucks down to clear the TRENCH when
+   * the robot nears one. Its height is real: raised, it hits the TRENCH arm. Joints with the 'lift' driver follow it.
+   */
+  lift: z
+    .object({
+      /** Height above frame.height when raised (m). */
+      height: z.number().positive(),
+      /** Height above frame.height when tucked for the TRENCH (m). */
+      trench: z.number().nonnegative().default(0),
+      /** Tuck when within this distance of a TRENCH and driving toward it (m). */
+      distance: z.number().positive().default(1.5),
+      /** Travel speed (m/s). */
+      speed: z.number().positive().default(0.3),
     })
     .nullable()
     .default(null),
