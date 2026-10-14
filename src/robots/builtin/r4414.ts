@@ -14,7 +14,7 @@ import { TURN_RATE, TURN_ACCEL } from '../../robot/schema';
  *  - Hopper walls: smoked polycarbonate on teal pocketed truss, chamfered rear corners, carbon-fiber end plates.
  *  - Intake: 3in 1/8in-wall polycarbonate roller (2× X60, 3.45:1) + 1.5in bottom roller (X44, 1.5:1), sliding on
  *    doubled 0.25in polycarbonate 10DP racks (X44 each side, 3.33:1); deploys between ~1.3in bumper gaps at the start
- *    of the match and stays down via steel latches; extending carbon-fiber hopper box ("85+ under the trench, 100+ with
+ *    of the match; it retracts when not intaking and pumps in and out to feed the Dye Rotor while shooting; extending carbon-fiber hopper box ("85+ under the trench, 100+ with
  *    net over the bump").
  *  - Dye Rotor (V10): round spoked pan, curved outer wall on standoffs, central tower with stacked omni wheels, spiral
  *    hook with passive omni rollers onto 3in TTB urethane wheels — single-stream feed, ~12–14 BPS gap-free.
@@ -40,8 +40,8 @@ export const r4414: BuiltinRobot = {
     author: 'HighTide',
     color: '#1a9e9a',
     description:
-      'The 2026 champion. Structural bumpers double as smoked hopper walls on a teal truss. A rack-driven intake slides out from under a carbon-fiber hopper box that holds 85+ FUEL and latches there. The Dye Rotor single-streams FUEL up a spiral hook into an A-frame turret with a 3in flywheel that shoots on the move.',
-    highlights: ['2026 World Champion (Daly captain)', 'Latching rack intake + 85+ FUEL hopper', 'Dye Rotor → single stream ~14 BPS', '55.7:1 turret, 4× X44 flywheel, SOTM', 'Fits under the TRENCH', 'No climber'],
+      'The 2026 champion. Structural bumpers double as smoked hopper walls on a teal truss. A rack-driven intake slides out from under a carbon-fiber hopper box that holds 85+ FUEL, and pumps back in while shooting to push FUEL into the rotor. The Dye Rotor single-streams FUEL up a spiral hook into an A-frame turret with a 3in flywheel that shoots on the move.',
+    highlights: ['2026 World Champion (Daly captain)', 'Rack slide intake + 85+ FUEL hopper', 'Dye Rotor → single stream ~14 BPS', '55.7:1 turret, 4× X44 flywheel, SOTM', 'Fits under the TRENCH', 'No climber'],
     sources: ['4414 2026 Technical Binder: 2026.team4414.com (CAD renders, Dye Rotor V10, Shooter V11, subsystem notes)', 'Chief Delphi: Team 4414 HighTide 2026 Tech Binder (RIPCURRENT)'],
     frame: { length: L, width: W, height: H, mass: 60, comHeight: 0.17, bumperThickness: inches(3.5), bumperHeight: inches(5.5) },
     drivetrain: { type: 'swerve', maxSpeed: 4.1, maxAccel: 10, maxOmega: TURN_RATE, maxAlpha: TURN_ACCEL },
@@ -49,7 +49,8 @@ export const r4414: BuiltinRobot = {
       zones: [{ center: [L / 2 + inches(3.5) + EXT - inches(1), inches(3.2), 0], size: [inches(6), inches(6.5), W - inches(3)] }],
       rate: 16,
       requiresDeploy: true,
-      latch: true,
+      // While feeding, the rack slide pumps back in (6 of its 10in) to shove the pile into the Dye Rotor.
+      compress: { from: 0, to: 0.6, period: 0.9 },
     },
     storage: {
       capacity: 88,
@@ -134,7 +135,7 @@ export const r4414: BuiltinRobot = {
     // The whole front of the hopper telescopes: a full-height CF front panel and two tall side panels slide forward on
     // the racks (through ~1.3in gaps in the bumper), overlapping the fixed smoked walls so the hopper stays closed. The
     // roller carriage rides at the foot of the side panels; stowed it sits up behind the front panel, above the bumper
-    // (inside the starting perimeter), and on deploy it drops to the carpet ahead of the bumper and latches there.
+    // (inside the starting perimeter), and on deploy it drops to the carpet ahead of the bumper.
     // Built in the deployed pose; the stowed pose is set by shifting the slide back EXT and lifting the carriage LIFT.
     const slide = kit.group('slide');
     const drop = kit.group('intake_carriage', slide);

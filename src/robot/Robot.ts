@@ -684,8 +684,10 @@ export class Robot {
         const rad = Math.max(0.05, Math.hypot(dx, dz));
         const w = ix.rps * Math.PI * 2;
         const tang = Math.min(1.6, w * rad);
-        vx = (-dz / rad) * tang;
-        vz = (dx / rad) * tang;
+        // An intake pushing into the hopper also crowds the pile in toward the rotor.
+        const inward = this.compressFrac !== null ? 0.6 : 0;
+        vx = (-dz / rad) * tang - (dx / rad) * inward;
+        vz = (dx / rad) * tang - (dz / rad) * inward;
       } else {
         const dx = feed[0] - lp.x;
         const dz = feed[2] - lp.z;
