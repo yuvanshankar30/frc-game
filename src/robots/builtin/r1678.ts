@@ -22,12 +22,14 @@ import { inches } from '../../util/units';
  *    hood rollers, 4× X60; hood on an X44 through a jackshaft.
  *  - Hopper: horizontal extension with the intake + vertical extension (corrugated roof) carried by the climber.
  *  - LEVEL 1 climb; Limelight 4 on the back face; 21 Krakens total.
- *  - Capacity modeled ~55 (community estimates 37–102).
+ *  - Capacity modeled 55 with the vertical hopper down, 74 raised (community estimates 37–102).
  */
 const L = inches(27);
 const W = inches(27);
 const H = inches(21.5);
 const LIME = 0x46d33a;
+/** Vertical hopper's top rail (center) with it down: recessed in the fixed walls so the TRENCH setpoint clears. */
+const VHOP_TOP = inches(16.7);
 
 export const r1678: BuiltinRobot = {
   def: {
@@ -37,8 +39,8 @@ export const r1678: BuiltinRobot = {
     author: 'Citrus Circuits',
     color: '#46d33a',
     description:
-      'A full-width slapdown intake feeds spiral agitator rollers and a ball tunnel that pre-accelerates FUEL into a 3.5in grip-tape drum under four black hood rollers. Smoked polycarbonate walls on riveted aluminum ride on the bumpers, and an X-truss front extension slides out over the intake.',
-    highlights: ['Milstein division champion', 'Ball tunnel + 3.5in grip-tape drum', 'Hood 17.5–52.5° (X44 jackshaft)', 'Climber lifts the hopper roof', 'LEVEL 1 climb', '21 Kraken motors'],
+      'A full-width slapdown intake feeds spiral agitator rollers and a ball tunnel that pre-accelerates FUEL into a 3.5in grip-tape drum under four black hood rollers. Smoked polycarbonate walls on riveted aluminum ride on the bumpers, and an X-truss front extension slides out over the intake. Once the hopper is full, the climber lifts a smoked upper box 8.25in to hold 74 FUEL, then lowers it as the robot shoots.',
+    highlights: ['Milstein division champion', 'Ball tunnel + 3.5in grip-tape drum', 'Hood 17.5–52.5° (X44 jackshaft)', 'Hopper rises when full: 55 → 74 FUEL', 'LEVEL 1 climb', '21 Kraken motors'],
     sources: ['citruscircuits.org/2026-robot (design write-up)', '1678 CAD release renderings (Limestone Extended / Retracted / Hood)', 'github.com/frc1678/C2026-Public (constants)'],
     frame: { length: L, width: W, height: H, mass: 61, comHeight: 0.17, bumperThickness: inches(3.5), bumperHeight: inches(5) },
     drivetrain: { type: 'swerve', maxSpeed: 4.4, maxAccel: 11, maxOmega: 11.0, maxAlpha: 50 }, // DriveConstants.kMaxAngularRate / kMaxAngularAcceleration
@@ -53,7 +55,8 @@ export const r1678: BuiltinRobot = {
       capacity: 55,
       preload: 8,
       // Inside the walls (ahead of the ball tunnel, behind the stowed front panel) so carried FUEL never shows through.
-      box: { center: [inches(4.5), inches(11.5), 0], size: [inches(16.6), inches(18), W - inches(1.8)] },
+      // Its top is the vertical hopper's roof, which rises with it.
+      box: { center: [inches(4.5), inches(9.4), 0], size: [inches(16.6), inches(13.8), W - inches(1.8)] },
     },
     shooter: {
       barrels: [-1.5, -0.5, 0.5, 1.5].map((k) => ({ exit: [-L / 2 - inches(2), inches(19.5), k * inches(5.6)] as [number, number, number], pivot: [0, 0, 0] as [number, number, number] })),
@@ -74,10 +77,12 @@ export const r1678: BuiltinRobot = {
       hoodStowsIdle: true, // Hood.STOW = kMinAngle (17.5°) when not shooting
     },
     climber: { maxLevel: 1, climbTime: 2.5, canAutoClimb: true },
-    // The climber elevator carries the hopper roof: up 8.25in in play (kMaxPosition), auto-tucked within 1.5m of a
-    // TRENCH (AutoTuckConstants) to its TRENCH setpoint. The modeled frame top already sits ~3in over the real stowed
-    // roof, so the 3.5in TRENCH setpoint maps to +0.5in here (still under the 22.25in arm).
-    lift: { height: inches(8.25), trench: inches(0.5), distance: 1.5, speed: 0.3 },
+    // The climber elevator carries the vertical hopper: up 8.25in (kMaxPosition) to expand it, auto-tucked within
+    // 1.5m of a TRENCH (AutoTuckConstants) to its 3.5in TRENCH setpoint, which keeps the hooks under the 22.25in arm.
+    // Expanding hopper: 55 FUEL with the roof down; once full it rises (expandHopper → MAX) to 74, the extra 16.7 ×
+    // 25.2 × 8.25in at ~58% random packing of 5.91in FUEL. Shooting brings it back down (contractHopper). No published
+    // capacity exists (community estimates 37–102).
+    lift: { height: inches(8.25), top: VHOP_TOP + inches(1.95), trench: inches(3.5), distance: 1.5, speed: 0.3, mode: 'expand', capacity: 74 },
     source: 'builtin:1678',
   },
   build() {
@@ -191,14 +196,60 @@ export const r1678: BuiltinRobot = {
     kit.motor('hood_x44', [hp[0] + inches(1.2), hp[1] - inches(4), inches(10)], 'z', undefined, true);
     kit.box('battery', [-L / 2 + inches(4), y0 + inches(3), inches(6)], [inches(3), inches(6), inches(7)], mat(0xc9822e, { rough: 0.6 }));
 
-    // ---------- climber elevator carrying the vertical hopper extension (roof)
+    // ---------- vertical hopper extension on the climber elevator (CAD "Extended" views): a smoked polycarbonate box
+    // on a 0.75in square-tube frame that nests inside the fixed walls. #25 chain on an X60 lifts it up to 8.25in; its
+    // perforated top rails carry the LEVEL 1 J-hooks at the back corners, over the shooter.
     const climb = kit.group('climber');
+    const VX0 = -L / 2 + inches(9.6); // back face, just ahead of the ball tunnel backing
+    const VX1 = wx1 - inches(0.35); // front face, inside the fixed front posts
+    const VZ = W / 2 - inches(1.0); // inside the fixed side walls
+    const VT = VHOP_TOP; // top rail, stowed
+    const VD = inches(8.75); // wall depth: still overlaps the fixed walls by 0.5in fully raised
+    const vcx = (VX0 + VX1) / 2;
+    const tube = mat(0xb9bfc6, { metal: 0.85, rough: 0.3 });
     for (const s of [-1, 1]) {
-      kit.box(`climb_tube${s}`, [-L / 2 + inches(10.2), H - inches(6.5), s * inches(11)], [inches(0.75), inches(10), inches(0.75)], angle, climb);
-      kit.box(`climb_rail${s}`, [-L / 2 + inches(10.2), inches(10), s * inches(11.9)], [inches(1), inches(16), inches(0.5)], M.tube());
+      kit.panel(`vhop_side${s}`, [vcx, VT - VD / 2, s * VZ], VX1 - VX0, VD, M.smoke(), 'xy', climb);
+      // Perforated 0.75in top rail (hole pattern) and the bottom lip that catches on the fixed walls.
+      kit.box(`vhop_rail_top${s}`, [vcx, VT, s * VZ], [VX1 - VX0 + inches(0.75), inches(0.75), inches(0.75)], tube, climb);
+      for (let k = 0; k < 18; k++) kit.cyl(`vhop_hole${s}_${k}`, [VX0 + inches(0.6) + k * ((VX1 - VX0 - inches(1.2)) / 17), VT, s * (VZ + inches(0.38))], inches(0.1), inches(0.04), 'z', black, climb, 8);
+      kit.box(`vhop_lip${s}`, [vcx, VT - VD + inches(0.3), s * VZ], [VX1 - VX0, inches(0.6), inches(0.5)], tube, climb);
+      for (const x of [VX0, VX1]) kit.box(`vhop_post${s}_${x > 0 ? 'f' : 'b'}`, [x, VT - VD / 2, s * VZ], [inches(0.75), VD, inches(0.75)], tube, climb);
+      // Pocketed triangular gusset at the back corner, then the J-hook rising out of it and curling back over the shooter.
+      kit.latticePlate(`vhop_gusset${s}`, [VX0 + inches(2.6), VT - inches(1.4), s * (VZ + inches(0.45))], inches(4.6), inches(2.2), {
+        plane: 'xy', color: 0xc4c9cf, cell: inches(1.6), rib: inches(0.25), parent: climb,
+        outline: [[-inches(2.3), inches(1.1)], [inches(2.3), inches(1.1)], [-inches(2.3), -inches(1.1)]],
+      });
+      const hook = new THREE.Shape();
+      const hw = inches(0.45);
+      const hr = inches(0.65);
+      hook.moveTo(0, 0);
+      hook.lineTo(hw, 0);
+      hook.lineTo(hw, inches(0.9));
+      hook.absarc(hw - hr, inches(0.9), hr, 0, Math.PI, false);
+      hook.lineTo(hw - 2 * hr, inches(0.45));
+      hook.lineTo(hw - 2 * hr + hw, inches(0.45));
+      hook.lineTo(hw - 2 * hr + hw, inches(0.9));
+      hook.absarc(hw - hr, inches(0.9), hr - hw, Math.PI, 0, true);
+      hook.lineTo(0, 0);
+      const hm = new THREE.Mesh(new THREE.ExtrudeGeometry(hook, { depth: inches(0.19), bevelEnabled: false, curveSegments: 10 }), mat(0xc4c9cf, { metal: 0.8, rough: 0.3 }));
+      hm.position.set(VX0 + inches(0.4), VT + inches(0.35), s * (VZ + inches(0.4)) - inches(0.095)); // tops out 1.95in over the rail
+      kit.add(hm, `vhop_hook${s}`, climb);
     }
-    kit.panel('roof', [inches(3), H - inches(0.6), 0], inches(20), W - inches(1.6), M.smoke(), 'xz', climb);
-    kit.motor('climb_x60', [-L / 2 + inches(10.2), y0 + inches(1.5), 0], 'z');
+    kit.panel('vhop_front', [VX1, VT - VD / 2, 0], 2 * VZ, VD, M.smoke(), 'zy', climb);
+    kit.panel('vhop_back', [VX0, VT - VD / 2, 0], 2 * VZ, VD, M.smoke(), 'zy', climb);
+    kit.box('vhop_rail_front', [VX1, VT, 0], [inches(0.75), inches(0.75), 2 * VZ], tube, climb);
+    kit.box('vhop_rail_back', [VX0, VT, 0], [inches(0.75), inches(0.75), 2 * VZ], tube, climb);
+    // Corrugated roof: smoked sheet with a ridge every inch.
+    kit.panel('roof', [vcx, VT + inches(0.3), 0], VX1 - VX0, 2 * VZ, M.smoke(), 'xz', climb);
+    for (let k = 1; k < 16; k++) kit.box(`roof_flute${k}`, [vcx, VT + inches(0.36), -VZ + (k * 2 * VZ) / 16], [VX1 - VX0, inches(0.05), inches(0.06)], mat(0x5a6068, { opacity: 0.5, rough: 0.2 }), climb);
+    // Carriage tubes riding the fixed elevator rails behind the box, chain runs and the X60 at the bottom.
+    for (const s of [-1, 1]) {
+      kit.box(`climb_tube${s}`, [VX0 - inches(0.55), VT - inches(5), s * inches(11)], [inches(0.75), inches(10), inches(0.75)], tube, climb);
+      kit.box(`climb_rail${s}`, [VX0 - inches(0.55), inches(11), s * inches(11.9)], [inches(1), inches(18), inches(0.5)], M.tube());
+      kit.box(`climb_chain${s}`, [VX0 - inches(0.55), inches(11), s * inches(12.3)], [inches(0.3), inches(17), inches(0.12)], mat(0x2a2c30, { metal: 0.6, rough: 0.5 }));
+      kit.pulley(`climb_sprocket${s}`, [VX0 - inches(0.55), inches(19.8), s * inches(12.3)], inches(0.75), { color: 0x9aa0a8, spokes: 5 });
+    }
+    kit.motor('climb_x60', [VX0 - inches(0.55), y0 + inches(1.5), 0], 'z');
 
     // ---------- horizontal hopper extension: smoked side panels + front aluminum X-truss panel, slides out over the
     // intake as it deploys (CAD "Extended" view)
@@ -240,7 +291,7 @@ export const r1678: BuiltinRobot = {
     rig.joint({ id: 'feeder', type: 'spin', driver: 'indexer', pivot: [-L / 2 + inches(5.6), inches(15.6), 0], axis: [0, 0, -1], speed: 1500 }, feeder);
     rig.joint({ id: 'drum', type: 'spin', driver: 'shooter-wheel', pivot: drumC, axis: [0, 0, -1], speed: 3400 }, drum);
     rig.joint({ id: 'hood', type: 'revolute', driver: 'hood', pivot: hp, axis: [0, 0, 1], active: -35, speed: 180 }, hood);
-    rig.joint({ id: 'climber', type: 'prismatic', driver: 'lift', pivot: [-L / 2 + inches(10.2), H, 0], axis: [0, 1, 0], active: inches(8.25), speed: 0.3 }, climb);
+    rig.joint({ id: 'climber', type: 'prismatic', driver: 'lift', pivot: [0, H, 0], axis: [0, 1, 0], active: inches(8.25), speed: 0.3 }, climb);
     const zones = [{ center: [intake.rollerCenter[0] + inches(1), inches(3.5), 0] as [number, number, number], size: [inches(6), inches(7), W - inches(1)] as [number, number, number] }];
     return { model: kit.root, joints: rig.joints, parts: rig.parts, patch: { intake: { ...r1678.def.intake!, zones } } };
   },

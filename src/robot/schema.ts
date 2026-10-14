@@ -192,14 +192,24 @@ export const robotSchema = z.object({
    */
   lift: z
     .object({
-      /** Height above frame.height when raised (m). */
+      /** Travel when raised (m). */
       height: z.number().positive(),
-      /** Height above frame.height when tucked for the TRENCH (m). */
+      /** Top of the lifting part (hooks included) when down, robot frame (m); defaults to frame.height. */
+      top: z.number().positive().nullable().default(null),
+      /** Travel when tucked for the TRENCH (m). */
       trench: z.number().nonnegative().default(0),
       /** Tuck when within this distance of a TRENCH and driving toward it (m). */
       distance: z.number().positive().default(1.5),
       /** Travel speed (m/s). */
       speed: z.number().positive().default(0.3),
+      /**
+       * 'raised': up whenever it can be (tucked only for the TRENCH). 'expand': an expanding hopper (1678): down until
+       * the hopper is full, then it rises to make room for up to `capacity` FUEL, and it follows the pile back down as
+       * the robot shoots. It can only tuck as low as the FUEL it's holding allows.
+       */
+      mode: z.enum(['raised', 'expand']).default('raised'),
+      /** 'expand' mode: FUEL held with it fully raised (storage.capacity is with it down). */
+      capacity: z.number().int().nonnegative().nullable().default(null),
     })
     .nullable()
     .default(null),

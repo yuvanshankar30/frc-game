@@ -316,7 +316,8 @@ export class Robot {
     const hz = s.z / 2;
     add(c.x, c.y - hy - t / 2, c.z, hx + t, t / 2, hz + t); // floor
     const netStretch = this.def.storage.net?.stretch ?? 0;
-    add(c.x, c.y + hy + netStretch + t / 2, c.z, hx + t, t / 2, hz + t); // roof (or the net at full stretch)
+    this.hopperRoofY = c.y + hy + netStretch + t / 2;
+    this.hopperRoof = add(c.x, this.hopperRoofY, c.z, hx + t, t / 2, hz + t); // roof (or the net at full stretch)
     if (netStretch > 0) {
       // Net sides above the walls.
       add(c.x, c.y + hy + netStretch / 2, c.z - hz - t / 2, hx + t, netStretch / 2, t / 2);
@@ -324,12 +325,14 @@ export class Robot {
       add(c.x + hx + t / 2, c.y + hy + netStretch / 2, c.z, t / 2, netStretch / 2, hz);
       add(c.x - hx - t / 2, c.y + hy + netStretch / 2, c.z, t / 2, netStretch / 2, hz);
     }
-    add(c.x, c.y, c.z - hz - t / 2, hx + t, hy, t / 2); // left
-    add(c.x, c.y, c.z + hz + t / 2, hx + t, hy, t / 2); // right
+    // An expanding hopper's walls reach up past its raised roof (the upper box's walls).
+    const up = this.def.lift?.mode === 'expand' ? this.def.lift.height : 0;
+    add(c.x, c.y + up / 2, c.z - hz - t / 2, hx + t, hy + up / 2, t / 2); // left
+    add(c.x, c.y + up / 2, c.z + hz + t / 2, hx + t, hy + up / 2, t / 2); // right
     // Entry wall is closed: intaken FUEL passes through it during its short entry arc (collisions off),
     // so carried FUEL can't slosh back out the front.
-    add(c.x + entrySide * (hx + t / 2), c.y, c.z, t / 2, hy, hz);
-    add(c.x - entrySide * (hx + t / 2), c.y, c.z, t / 2, hy, hz); // back
+    add(c.x + entrySide * (hx + t / 2), c.y + up / 2, c.z, t / 2, hy + up / 2, hz);
+    add(c.x - entrySide * (hx + t / 2), c.y + up / 2, c.z, t / 2, hy + up / 2, hz); // back
   }
 
   /** Robot-frame point just inside the entry slot. */
@@ -422,7 +425,7 @@ export class Robot {
         rest[ix + nx * iz] = y;
       }
     const at = (k: number) => new THREE.Vector3(s.x > d ? x0 + (k % nx) * sx : c.x, rest[k], s.z > d ? z0 + Math.floor(k / nx) * sz : c.z);
-    return { rest, nx, at, ceiling: c.y + s.y / 2 + (this.def.storage.net?.stretch ?? 0) };
+    return { rest, nx, at, ceiling: c.y + s.y / 2 + this.hopperHeadroom() };
   }
 
   /** Robot-frame point just above the lowest resting spot (null when no spot has room for another ball). */
@@ -524,6 +527,7 @@ export class Robot {
 
   /** Forget everything carried (the field re-stages FUEL on reset). */
   clearHopper() {
+    this.liftExpanded = false;
     this.stored.length = 0;
     this.overflow.length = 0;
     this.entering.clear();
@@ -579,7 +583,7 @@ export class Robot {
       const i = this.stored[k];
       if (this.entering.has(i)) continue;
       const lp = this.toLocal(fuel.position(i));
-      const top = s.y / 2 + (this.def.storage.net?.stretch ?? 0);
+      const top = s.y / 2 + this.hopperHeadroom();
       if (Math.abs(lp.x - c.x) > s.x / 2 + m || lp.y - c.y > top + m || lp.y - c.y < -s.y / 2 - m || Math.abs(lp.z - c.z) > s.z / 2 + m) {
         this.stats.spilled = (this.stats.spilled ?? 0) + 1;
         this.releaseOutside(fuel, i);
@@ -977,6 +981,32 @@ export class Robot {
 
   /** Height of the lifting part above the frame (m), and its collider. */
   liftPos = 0;
+  /** An expanding hopper's roof has gone up to make room (until the robot shoots it back down). */
+  private liftExpanded = false;
+  /** Hopper roof collider (rises with an expanding hopper). */
+  private hopperRoof: RAPIER.Collider | null = null;
+  private hopperRoofY = 0;
+
+  /** How far carried FUEL can stack above the hopper box: a net's stretch, or an expanding hopper's raised roof. */
+  private hopperHeadroom() {
+    return (this.def.storage.net?.stretch ?? 0) + (this.def.lift?.mode === 'expand' ? this.liftPos : 0);
+  }
+
+  /** FUEL the robot can hold right now: an expanding hopper holds more as its roof rises. */
+  get capacity() {
+    const base = this.def.storage.capacity;
+    const lift = this.def.lift;
+    if (!lift || lift.mode !== 'expand' || lift.capacity === null || lift.capacity <= base) return base;
+    return base + Math.floor((lift.capacity - base) * clamp(this.liftPos / lift.height, 0, 1) + 1e-6);
+  }
+
+  /** Lowest an expanding hopper's roof can go with what it's carrying (m above the frame). */
+  private liftNeeded() {
+    const lift = this.def.lift!;
+    const base = this.def.storage.capacity;
+    if (lift.mode !== 'expand' || lift.capacity === null || lift.capacity <= base) return 0;
+    return lift.height * clamp((this.carried - base) / (lift.capacity - base), 0, 1);
+  }
   private liftCollider: RAPIER.Collider | null = null;
   /** Driver is asking for a shot (or has the flywheel toggled on): the hood stays up. */
   private shootHeld = false;
@@ -1004,10 +1034,23 @@ export class Robot {
   private stepLift(dt: number) {
     const lift = this.def.lift;
     if (!lift || !this.liftCollider) return;
-    const target = this.nearTrench(lift.distance) ? lift.trench : lift.height;
+    let target: number;
+    if (lift.mode === 'expand') {
+      // 1678's climber carries the vertical hopper: expandHopper (MAX) once the hopper is full, contractHopper while
+      // shooting (the roof follows the pile down, crowding it onto the floor rollers), and auto-tuck for the TRENCH.
+      const need = this.liftNeeded();
+      if (this.carried >= this.def.storage.capacity) this.liftExpanded = true;
+      if (this.feeding || this.carried < this.def.storage.capacity - 2) this.liftExpanded = false;
+      target = this.liftExpanded ? lift.height : need;
+      // Foam FUEL can't be squashed flat: tucking stops where the pile is.
+      if (this.nearTrench(lift.distance)) target = Math.min(target, Math.max(lift.trench, need));
+    } else target = this.nearTrench(lift.distance) ? lift.trench : lift.height;
     this.liftPos = approach(this.liftPos, target, lift.speed * dt);
-    const hy = Math.max(0.005, this.liftPos / 2);
-    this.liftCollider.setEnabled(this.liftPos > 0.01);
+    if (this.hopperRoof && lift.mode === 'expand') this.hopperRoof.setTranslationWrtParent({ x: this.hopper.center.x, y: this.hopperRoofY + this.liftPos, z: this.hopper.center.z });
+    // Its real height: a slab over the frame up to the lifting part's top (what hits the TRENCH arm).
+    const over = (lift.top ?? this.def.frame.height) + this.liftPos - this.def.frame.height;
+    const hy = Math.max(0.005, over / 2);
+    this.liftCollider.setEnabled(over > 0.01);
     this.liftCollider.setHalfExtents({ x: this.def.frame.length / 2 - 0.02, y: hy, z: this.def.frame.width / 2 - 0.02 });
     this.liftCollider.setTranslationWrtParent({ x: 0, y: this.def.frame.height - 0.015 + hy, z: 0 });
   }
@@ -1149,7 +1192,7 @@ export class Robot {
   private runIntake(ctx: RobotContext, dt: number) {
     const def = this.def;
     const intake = def.intake!;
-    if (this.carried >= def.storage.capacity) return;
+    if (this.carried >= this.capacity) return;
     this.intakeTokens = Math.min(this.intakeTokens + intake.rate * dt, 3);
     if (this.intakeTokens < 1) return;
     const fuel = ctx.field.fuel;
@@ -1177,7 +1220,7 @@ export class Robot {
           break;
         }
       }
-      if (this.carried >= def.storage.capacity) break;
+      if (this.carried >= this.capacity) break;
     }
   }
 
@@ -1715,7 +1758,7 @@ export class Robot {
     }
     this.visual.position.set(p.x, p.y + w.bob, p.z);
     this.visual.quaternion.copy(q).multiply(this.tmpQ.setFromEuler(this.swayEuler.set(w.roll, 0, w.pitch)));
-    if (this.net && this.fuel) this.net.update(this.stored.map((i) => this.toLocal(this.fuel!.position(i))), this.carried / this.def.storage.capacity);
+    if (this.net && this.fuel) this.net.update(this.stored.map((i) => this.toLocal(this.fuel!.position(i))), this.carried / this.capacity);
     // Swerve modules: steer visuals if the model tagged them (optional, cosmetic).
     if (this.def.drivetrain.type === 'swerve') {
       const states = swerveModuleStates(this.speeds, this.wheelPositions);

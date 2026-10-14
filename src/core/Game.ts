@@ -462,7 +462,7 @@ export class Game {
         team: p.robot.def.team,
         alliance: p.robot.alliance,
         stored: p.robot.carried,
-        capacity: p.robot.def.storage.capacity,
+        capacity: p.robot.capacity,
         climbLevel: p.robot.climbLevel,
         climbState: p.robot.climb,
         maxClimb: this.match.phase === 'auto' ? Math.min(1, p.robot.def.climber?.maxLevel ?? 0) : (p.robot.def.climber?.maxLevel ?? 0),

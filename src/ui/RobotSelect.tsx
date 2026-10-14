@@ -17,7 +17,7 @@ export function RobotStats({ def }: { def: RobotDefinition }) {
   const ftps = (def.drivetrain.maxSpeed * 3.281).toFixed(1);
   const cells: [string, React.ReactNode][] = [
     ['Top speed', <>{ftps}<small> ft/s</small></>],
-    ['Hopper', <>{def.storage.capacity}<small> fuel</small></>],
+    ['Hopper', <>{def.storage.capacity}{def.lift?.mode === 'expand' && def.lift.capacity ? `–${def.lift.capacity}` : ''}<small> fuel</small></>],
     ['Fire rate', sh ? <>{sh.rate}<small> bps</small></> : '—'],
     ['Shooter', sh ? (sh.turretMin !== null ? (sh.barrels.length > 1 ? `${sh.barrels.length}× turret` : 'Turret') : `${sh.barrels.length}-lane drum`) : '—'],
     ['Intake', def.intake ? <>{def.intake.rate}<small> /s</small></> : '—'],

@@ -24,6 +24,8 @@ for (const team of teams) {
     const cmd = (x, rot) => ({ x, z: 0, rot, refYaw: 0, intake: true, shoot: false, eject: false, climb: false });
     for (let k = 0; k < 60; k++) g.stepSim([cmd(0, 0)], 1 / 120);
     const z = r.def.intake.zones[0];
+    // An expanding hopper (1678) holds more once its roof has risen.
+    const maxCap = r.def.lift?.mode === 'expand' && r.def.lift.capacity ? r.def.lift.capacity : r.def.storage.capacity;
     let last = 0, stall = 0;
     for (let k = 0; k < 120 * 30; k++) {
       // Drop a loose ball into the intake zone every few steps.
@@ -36,9 +38,9 @@ for (const team of teams) {
       const t = k / 120;
       g.stepSim([cmd(Math.sin(t * 1.3) * 0.4, Math.sin(t * 0.7) * 0.3)], 1 / 120);
       if (r.carried > last) { last = r.carried; stall = 0; } else stall++;
-      if (r.carried >= r.def.storage.capacity || stall > 120 * 5) break;
+      if (r.carried >= maxCap || stall > 120 * 5) break;
     }
-    return { cap: r.def.storage.capacity, carried: r.carried, inBox: r.stored.length, overflow: r.overflow.length, missed: r.stats.missedEntry ?? 0, spilled: r.stats.spilled ?? 0 };
+    return { cap: maxCap, carried: r.carried, inBox: r.stored.length, overflow: r.overflow.length, missed: r.stats.missedEntry ?? 0, spilled: r.stats.spilled ?? 0 };
   })()`);
 }
 console.table(out);

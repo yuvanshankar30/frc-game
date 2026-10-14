@@ -1,11 +1,11 @@
-// Robots with a lift (1678's hopper roof): auto-tuck under the TRENCH, and blocked by it when raised.
+// Robots with a 'raised' lift: auto-tuck under the TRENCH, and blocked by it when raised. (1678's expanding hopper: expand-test.mjs.)
 import { chromium } from 'playwright-core';
 const url = process.env.URL ?? 'http://localhost:5174/';
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
 const page = await browser.newPage({ viewport: { width: 900, height: 600 } });
 const errors = [];
 page.on('pageerror', (e) => errors.push(e.message));
-for (const team of (process.env.ROBOTS ?? '1678,4414').split(',')) {
+for (const team of (process.env.ROBOTS ?? '4414').split(',')) {
   await page.goto(url);
   await page.waitForTimeout(1000);
   await page.getByText('Practice', { exact: true }).first().click();
