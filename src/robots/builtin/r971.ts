@@ -37,7 +37,7 @@ const TR_P: [number, number, number] = [-L / 2 + inches(6.2), DECK + inches(0.5)
 const BOX_X0 = DECK_X1;
 const BOX_X1 = L / 2 - inches(0.5);
 const HOP_TOP = H - inches(0.4);
-const EXT = inches(8); // hopper slide-out past the frame when the intake is down
+const EXT = inches(12); // hopper extension past the frame (reference: well out over the intake)
 const ALU = 0xa9b0b8;
 const SPONSORS = ['WCP', 'Qualcomm', 'J&J', 'Apple', 'INTUITIVE', 'Google', 'NASA', 'In Memory of Zach Marks', 'The Mintz Family'];
 
@@ -159,7 +159,7 @@ export const r971: BuiltinRobot = {
     author: 'Spartan Robotics',
     color: '#2f5fd8',
     description:
-      'Two independent turrets side by side on a silver truss deck, each on a 10in X-contact bearing with a 124T spur gear, 4in neoprene flywheels and a curved lead-screw arc hood. Twin omni-wheel separators split FUEL from a powered roller floor into two streams. A 1678-style slapdown pushes the tall polycarb hopper out past the bumper, and a telescoping arm between the turrets climbs LEVEL 1.',
+      'Two independent turrets side by side on a silver truss deck, each on a 10in X-contact bearing with a 124T spur gear, 4in neoprene flywheels and a curved lead-screw arc hood. Twin omni-wheel separators split FUEL from a powered roller floor into two streams. A tall polycarb hopper extension stands well out over a 1678-style slapdown, with a grid net across the top, and a telescoping arm between the turrets climbs LEVEL 1.',
     highlights: ['Dual independent turrets (±95° each)', 'Omni-wheel separator → two streams', 'Slapdown intake slides the hopper out', 'Shoot-on-the-move', 'LEVEL 1 telescoping climber', 'Fits under the TRENCH'],
     sources: ['971 Mixtape Technical Documentation 2026 (drivetrain, climber, intake, indexer, turrets, shooter)', '971 Onshape CAD release (top / iso / side / front / rear views)', 'github.com/frc971/971-second-robot-2026 (robot code + photo)'],
     frame: { length: L, width: W, height: H, mass: 59, comHeight: 0.16, bumperThickness: inches(3.5), bumperHeight: inches(5) },
@@ -173,8 +173,7 @@ export const r971: BuiltinRobot = {
       capacity: 40,
       preload: 8,
       box: { center: [(BOX_X0 + BOX_X1) / 2 + inches(2.25), inches(12.2), 0], size: [BOX_X1 - BOX_X0 + inches(3.5), inches(17.5), W - inches(2)] },
-      // Light grid net over the top of the hopper and its extension (reference).
-      net: { stretch: inches(2), color: '#4a5058' },
+
     },
     shooter: {
       barrels: [{ exit: [0, 0, 0] }, { exit: [0, 0, 0] }],
@@ -270,6 +269,11 @@ export const r971: BuiltinRobot = {
     kit.box('ext_front', [ex1, (eyb + inches(1.5) + HOP_TOP) / 2, 0], [0.003, HOP_TOP - eyb - inches(1.5), 2 * hz - inches(0.8)], hopperPanel(), hop);
     kit.box('ext_front_rail', [ex1, HOP_TOP, 0], [inches(0.7), inches(0.7), 2 * hz - inches(0.8)], M.alu(), hop);
     kit.box('ext_floor', [(ex0 + ex1) / 2, eyb + inches(0.75), 0], [ex1 - ex0, inches(0.08), 2 * hz - inches(1)], hopperPanel(), hop, [0, 0, Math.atan2(inches(1.5), ex1 - ex0)]);
+    // Grid net over the whole top, hopper + extension (reference), part of the model so it shows everywhere.
+    const netX0 = BOX_X0 + step;
+    const netTop = kit.box('hopper_net_top', [(netX0 + ex1) / 2, HOP_TOP + inches(0.2), 0], [ex1 - netX0, 0.003, 2 * hz - inches(0.4)], M.net(), hop);
+    netTop.renderOrder = 2;
+    for (const s of [-1, 1]) kit.box(`hopper_net_rim${s}`, [(netX0 + ex1) / 2, HOP_TOP + inches(0.2), s * (hz - inches(0.2))], [ex1 - netX0, inches(0.4), inches(0.4)], M.alu(), hop);
     const topRoller = kit.tubeRoller('top_roller', ex1 - inches(1.5), HOP_TOP - inches(1.4), -hz + inches(1.2), hz - inches(1.2), inches(0.7), 0xb8bec5, hop);
 
     // ---------- indexer: roller floor → twin omni separators (split into two paths) → turret kickers

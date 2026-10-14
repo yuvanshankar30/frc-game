@@ -769,9 +769,20 @@ export class Robot {
 
     // Aim assist for fixed shooters (and turrets at their limit): rotate the robot toward the HUB.
     let assisted = false;
-    // Only a fixed shooter has to point the robot. Turret robots (971's code, for one, never turns the drivetrain to
-    // aim) fire whenever the target is inside the turret's range and leave positioning to the driver.
-    if (ctx.assist && cmd.shoot && this.def.shooter && this.def.shooter.turretMin === null && this.carried > 0) {
+    // A robot whose code only scores below a drive speed (1678, 2910) slows to it while Shoot is held, so holding Shoot
+    // always ends in shots instead of silently waiting.
+    const gate = this.def.shooter?.maxScoreSpeed ?? null;
+    if (cmd.shoot && gate !== null && !this.shuttling && this.carried > 0) {
+      const v = Math.hypot(target.vx, target.vz);
+      const cap = gate * 0.85;
+      if (v > cap) {
+        target.vx *= cap / v;
+        target.vz *= cap / v;
+      }
+    }
+    // A fixed shooter points the robot at the target. A turret robot only turns when the target is outside the
+    // turret's range, and then just far enough to bring it inside (inside the range the chassis is the driver's).
+    if (ctx.assist && cmd.shoot && this.def.shooter && this.carried > 0) {
       const err = this.robotAimError(ctx);
       // A turret covering the target (err exactly 0) aims by itself: leave the chassis to the driver.
       if (err !== null && err !== 0 && Math.abs(cmd.rot) < 0.2) {
@@ -939,7 +950,9 @@ export class Robot {
       const lo = sh.turretMin * DEG;
       const hi = sh.turretMax * DEG;
       if (err >= lo && err <= hi) return 0;
-      err = err < lo ? err - lo : err - hi;
+      // Aim a little inside the limit so the turret isn't left pinned against its stop.
+      const m = Math.min(10 * DEG, (hi - lo) / 4);
+      err = err < lo ? err - (lo + m) : err - (hi - m);
     }
     return err;
   }
