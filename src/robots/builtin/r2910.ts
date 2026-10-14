@@ -157,7 +157,7 @@ export const r2910: BuiltinRobot = {
     const intake = groundIntake(kit, 'intake', { bumper: { face: L / 2 + inches(4), top: inches(2.56) + inches(5.5) }, pivot: [ipiv[0], ipiv[1]], rollerX: L / 2 + inches(4) + inches(4.5), rollerR: inches(1), width: W, roller: 'silicone', wheel: 0x2a2d33, armColor: 0xb9bec5, kicker: true, deflector: false });
     intakeGearbox(kit, 'intake', [ipiv[0], ipiv[1]], W / 2 - inches(2));
     kit.box('bash_bar', [intake.rollerCenter[0] - inches(0.5), intake.rollerCenter[1] + inches(2.4), 0], [inches(2), inches(2), W - inches(0.6)], M.tube(), intake.group);
-    kit.tubeRoller('intake_lower2', intake.rollerCenter[0] - inches(5.5), inches(2.6), -W / 2 + inches(1.5), W / 2 - inches(1.5), inches(0.625), 0x2a2d33, intake.group);
+    kit.tubeRoller('intake_lower2', intake.rollerCenter[0] - inches(2.9), inches(2.1), -W / 2 + inches(1.5), W / 2 - inches(1.5), inches(0.625), 0x2a2d33, intake.group);
 
     kit.limelight([L / 2 - inches(3), H - inches(2), 0], 0);
     kit.led('led', [-L / 2 + inches(0.4), inches(14), 0], [0.006, inches(0.6), W - inches(6)], GREEN);

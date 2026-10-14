@@ -5,6 +5,7 @@ import { RobotPreview } from '../render/preview';
 import { robotThumb } from '../render/thumbs';
 import { connectedGamepads } from '../core/input/Input';
 import type { RobotDefinition } from '../robot/schema';
+import { FEATURES } from '../game/features';
 
 export function RobotStats({ def }: { def: RobotDefinition }) {
   const sh = def.shooter;
@@ -15,7 +16,7 @@ export function RobotStats({ def }: { def: RobotDefinition }) {
     ['Fire rate', sh ? <>{sh.rate}<small> bps</small></> : '—'],
     ['Shooter', sh ? (sh.turretMin !== null ? (sh.barrels.length > 1 ? `${sh.barrels.length}× turret` : 'Turret') : `${sh.barrels.length}-lane drum`) : '—'],
     ['Intake', def.intake ? <>{def.intake.rate}<small> /s</small></> : '—'],
-    ['Climb', def.climber?.maxLevel ? `L${def.climber.maxLevel}` : 'None'],
+    ...(FEATURES.climbing ? [['Climb', def.climber?.maxLevel ? `L${def.climber.maxLevel}` : 'None'] as [string, React.ReactNode]] : []),
     ['Drive', def.drivetrain.type[0].toUpperCase() + def.drivetrain.type.slice(1)],
     ['Frame', <>{(def.frame.length / 0.0254).toFixed(1)}×{(def.frame.width / 0.0254).toFixed(1)}<small> in</small></>],
     ['Height', <>{(def.frame.height / 0.0254).toFixed(1)}<small> in</small></>],
@@ -54,7 +55,7 @@ export function robotChips(def: RobotDefinition) {
     if (sh.hoodMin !== null) chips.push('hood');
     if (sh.sotm) chips.push('shoots moving');
   }
-  chips.push(def.climber?.maxLevel ? `L${def.climber.maxLevel} climb` : 'no climb');
+  if (FEATURES.climbing) chips.push(def.climber?.maxLevel ? `L${def.climber.maxLevel} climb` : 'no climb');
   if (def.frame.height <= 0.565) chips.push('fits trench');
   return chips;
 }

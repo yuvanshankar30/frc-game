@@ -257,7 +257,8 @@ export const r971: BuiltinRobot = {
       const g = new THREE.Shape();
       g.moveTo(ex0, eyb);
       g.lineTo(ex1 - inches(1), eyb + inches(1.3));
-      g.quadraticCurveTo(ex1 - inches(3), eyb - inches(1.5), ex1 - inches(5.5), eyb - inches(2.4));
+      // Its lower edge stays just above the bumper as the extension slides out over it.
+      g.quadraticCurveTo(ex1 - inches(3), eyb - inches(0.6), ex1 - inches(5.5), eyb - inches(0.8));
       g.lineTo(ex0, eyb - inches(0.4));
       const gm = new THREE.Mesh(new THREE.ShapeGeometry(g), M.anodBlack());
       gm.position.z = z + s * inches(0.05);

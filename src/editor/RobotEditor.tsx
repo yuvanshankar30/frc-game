@@ -13,13 +13,14 @@ import { BUILTINS, buildBuiltin } from '../robots/registry';
 import { toast } from '../ui/toast';
 import { NumIn, NumM, Vec3In, Field, Check, Select } from './fields';
 import { newRobotDefinition, fitFrameToBounds } from './defaults';
+import { FEATURES } from '../game/features';
 
 type Tab = 'model' | 'robot' | 'joints' | 'mechanisms' | 'save';
 
 const DRIVER_HELP: Record<string, string> = {
   none: 'Does not move',
   'intake-deploy': 'Moves stowed → active while intaking',
-  'intake-roller': 'Spins while intaking',
+  'intake-roller': 'Intake roller (shown still)',
   indexer: 'Spins while shooting / intaking',
   'shooter-wheel': 'Spins with the flywheel',
   turret: 'Follows the turret aim (value = stowed + turret yaw)',
@@ -1171,22 +1172,26 @@ function MechanismsTab({
         </>
       )}
 
-      <h4>Climber</h4>
-      <Select
-        label="Max level"
-        value={String(def.climber?.maxLevel ?? 0)}
-        options={[
-          ['0', 'No climber'],
-          ['1', 'LEVEL 1 (off the carpet)'],
-          ['2', 'LEVEL 2 (bumpers above LOW rung)'],
-          ['3', 'LEVEL 3 (bumpers above MID rung)'],
-        ]}
-        onChange={(v) => update((d) => void (d.climber = Number(v) ? { maxLevel: Number(v), climbTime: d.climber?.climbTime ?? 4, canAutoClimb: d.climber?.canAutoClimb ?? true } : null))}
-      />
-      {def.climber && (
+      {FEATURES.climbing && (
         <>
-          <NumM label="Climb time (s)" value={def.climber.climbTime} onChange={(v) => update((d) => void (d.climber!.climbTime = Math.max(0.3, v)))} />
-          <Check label="Can climb in AUTO" value={def.climber.canAutoClimb} onChange={(v) => update((d) => void (d.climber!.canAutoClimb = v))} />
+          <h4>Climber</h4>
+          <Select
+            label="Max level"
+            value={String(def.climber?.maxLevel ?? 0)}
+            options={[
+              ['0', 'No climber'],
+              ['1', 'LEVEL 1 (off the carpet)'],
+              ['2', 'LEVEL 2 (bumpers above LOW rung)'],
+              ['3', 'LEVEL 3 (bumpers above MID rung)'],
+            ]}
+            onChange={(v) => update((d) => void (d.climber = Number(v) ? { maxLevel: Number(v), climbTime: d.climber?.climbTime ?? 4, canAutoClimb: d.climber?.canAutoClimb ?? true } : null))}
+          />
+          {def.climber && (
+            <>
+              <NumM label="Climb time (s)" value={def.climber.climbTime} onChange={(v) => update((d) => void (d.climber!.climbTime = Math.max(0.3, v)))} />
+              <Check label="Can climb in AUTO" value={def.climber.canAutoClimb} onChange={(v) => update((d) => void (d.climber!.canAutoClimb = v))} />
+            </>
+          )}
         </>
       )}
     </div>

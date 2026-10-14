@@ -11,6 +11,7 @@ import { TOWER, FUEL, FIELD, HUB } from '../field/rebuilt/dims';
 import { DEG, clamp, wrapAngle, approach } from '../util/units';
 import { makeBumpers } from './bumpers';
 import type { FuelSystem } from '../field/fuel';
+import { FEATURES } from '../game/features';
 
 export interface RobotCommand {
   /** Translation in the reference frame, -1..1 (x = forward from the reference, z = right). */
@@ -695,7 +696,7 @@ export class Robot {
   // ---------------------------------------------------------------- update
 
   step(cmd: RobotCommand, ctx: RobotContext, dt: number) {
-    if (cmd.climb) this.toggleClimb(ctx);
+    if (cmd.climb && FEATURES.climbing) this.toggleClimb(ctx);
     if (this.climb !== 'none') {
       this.stepClimb(dt);
     } else {
@@ -717,7 +718,8 @@ export class Robot {
     let assisted = false;
     if (ctx.assist && cmd.shoot && this.def.shooter && this.carried > 0) {
       const err = this.robotAimError(ctx);
-      if (err !== null && Math.abs(cmd.rot) < 0.2) {
+      // A turret covering the target (err exactly 0) aims by itself: leave the chassis to the driver.
+      if (err !== null && err !== 0 && Math.abs(cmd.rot) < 0.2) {
         // Time-optimal turn: the fastest rate it can still brake from in the angle left (√(2·α·θ)), blended to a
         // proportional term near the target, so it swings onto the HUB and stops there instead of rocking past it.
         const alpha = limits.maxAlpha * 0.8;
@@ -937,7 +939,8 @@ export class Robot {
         jt.target = this.intakeOn > 0.01 || this.intakeLatched ? d.active : d.stowed;
         break;
       case 'intake-roller':
-        jt.target = this.intakeOn;
+        // Rollers aren't animated: a spinning roller strobes at frame rate and reads as noise.
+        jt.target = 0;
         break;
       case 'indexer':
         jt.target = this.feeding ? 1 : this.intakeOn * 0.35;
@@ -1106,8 +1109,9 @@ export class Robot {
       const barrel = sh.barrels[b];
       // Desired turret yaw from the turret axis, then the exit point at that yaw.
       const pivotW = this.toWorld({ x: barrel.pivot[0], y: barrel.exit[1], z: barrel.pivot[2] }, new THREE.Vector3());
-      let tx = hub.x;
-      let tz = hub.z;
+      // The lanes of a fixed drum all aim at the point the first lane led to.
+      let tx = shared && !hasTurret ? this.aimPoint.x : hub.x;
+      let tz = shared && !hasTurret ? this.aimPoint.z : hub.z;
       const ty = hub.shuttle ? hub.y : hub.y + 0.05;
       const relFor = (x: number, z: number, from: THREE.Vector3) => wrapAngle(Math.atan2(-(z - from.z), x - from.x) - (yaw + sh.yawOffset * DEG));
       let rel = hasTurret && ctx.assist ? clamp(relFor(tx, tz, pivotW), sh.turretMin! * DEG, sh.turretMax! * DEG) : 0;
@@ -1136,7 +1140,10 @@ export class Robot {
         // Lead the target by the robot's velocity × time of flight (two refinement passes).
         for (let k = 0; k < 2; k++) {
           const tof = flightTime(sol.speed, sol.elev, ty - exit.y);
-          const ev = this.pointVelocity(exit);
+          // A fixed shooter leads as if the chassis were already turning at the rate that tracks the target: using the
+          // spin it has mid-swing would drag the lead point round with the swing and the robot would chase it. A turret
+          // leads by the full exit velocity.
+          const ev = hasTurret ? this.pointVelocity(exit) : this.trackingVelocity(exit, ctx);
           tx = hub.x - ev.x * tof;
           tz = hub.z - ev.z * tof;
           if (hasTurret) rel = clamp(relFor(tx, tz, pivotW), sh.turretMin! * DEG, sh.turretMax! * DEG);
@@ -1187,14 +1194,27 @@ export class Robot {
     } else {
       // Fixed shooter: fire whenever the heading (led for robot motion and spin) points the shooter at the HUB. While
       // the assist is swinging the robot onto the target, wait until it has nearly stopped turning: firing mid-swing
-      // flings the ball sideways with the chassis spin (a wide rear drum is ~0.4 m off-center). A driver spinning the
-      // robot on purpose still gets shots as the shooter sweeps past the HUB.
+      // flings the ball sideways with the chassis spin (a wide rear drum is ~0.4 m off-center).
       const e = this.robotAimError(ctx);
       if (e === null || Math.abs(e) > tol * 1.4) return false;
-      if (this.assistTurning && Math.abs(this.body.angvel().y) > 0.15) return false;
+      // Tracking the HUB while driving past it is fine: compare the spin to the rate the bearing to the target turns.
+      // A driver spinning a fixed shooter hard sweeps it past the HUB too fast to hit: hold fire.
+      const slip = Math.abs(this.body.angvel().y - this.bearingRate(ctx));
+      if (slip > (this.assistTurning ? 0.3 : 1.2)) return false;
     }
     if (sh.hoodMin !== null && Math.abs(this.hoodAngle - aim.barrels[0].elev / DEG) > 4) return false;
     return true;
+  }
+
+  /** How fast (rad/s, +CCW from above) the direction from the robot to its target turns as the robot drives. */
+  private bearingRate(ctx: RobotContext) {
+    const t = Number.isFinite(this.aimPoint.x) ? this.aimPoint : this.shotTarget(ctx);
+    const p = this.body.translation();
+    const v = this.body.linvel();
+    const rx = t.x - p.x;
+    const rz = t.z - p.z;
+    // Yaw is measured CCW about +Y with heading (cos, -sin): d/dt atan2(-rz, rx).
+    return (rx * v.z - rz * v.x) / Math.max(rx * rx + rz * rz, 0.25);
   }
 
   /** Barrel 0's launch state with the current turret/hood, no spread. */
@@ -1231,6 +1251,14 @@ export class Robot {
     const w = (AERO.launchSpin * speed) / FUEL.radius;
     const spin = new THREE.Vector3(Math.sin(dirYaw) * w, 0, Math.cos(dirYaw) * w);
     return { pos, vel, spin };
+  }
+
+  /** Velocity of a robot-fixed point if the chassis turned exactly at the target's bearing rate. */
+  private trackingVelocity(p: THREE.Vector3Like, ctx: RobotContext) {
+    const lv = this.body.linvel();
+    const w = this.bearingRate(ctx);
+    const c = this.body.translation();
+    return new THREE.Vector3(lv.x + w * (p.z - c.z), 0, lv.z - w * (p.x - c.x));
   }
 
   /** Velocity of a world point rigidly attached to the robot (linear + ω × r). */

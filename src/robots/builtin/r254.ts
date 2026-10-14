@@ -108,7 +108,7 @@ export const r254: BuiltinRobot = {
     const ipiv: [number, number, number] = [L / 2 - inches(1), y0 + inches(8), 0];
     const intake = groundIntake(kit, 'intake', { bumper: { face: L / 2 + inches(3.5), top: inches(2.56) + inches(5) }, pivot: [ipiv[0], ipiv[1]], rollerX: L / 2 + inches(3.5) + inches(4.5), rollerR: inches(1.5), width: W, wheel: 0x3a7bff, armColor: BLK, armStyle: 'tube', tubeColor: BLUE, kicker: true, deflector: false });
     intakeGearbox(kit, 'intake', [ipiv[0], ipiv[1]], W / 2 - inches(2));
-    kit.box('kicker_ramp', [intake.rollerCenter[0] - inches(4), inches(4.2), 0], [inches(6), inches(0.2), W - inches(2)], M.steel(), intake.group, [0, 0, 0.42]);
+    kit.box('kicker_ramp', [intake.rollerCenter[0] - inches(2.4), inches(4.4), 0], [inches(3.8), inches(0.2), W - inches(2)], M.steel(), intake.group, [0, 0, 0.42]);
     // Blue triangular tube bracing at the front corners (as in the reveal photo).
     for (const s of [-1, 1]) {
       const t1 = kit.box(`blue_brace${s}`, [L / 2 - inches(2.5), y0 + inches(4.5), s * (W / 2 + inches(0.35))], [inches(9), inches(0.8), inches(0.8)], mat(BLUE, { metal: 0.5, rough: 0.35 }));

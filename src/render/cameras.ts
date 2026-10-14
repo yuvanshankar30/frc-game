@@ -90,8 +90,9 @@ export class CameraRig {
         d = Math.atan2(Math.sin(d), Math.cos(d));
         this.chaseYaw += snap ? d : d * k;
         const back = new THREE.Vector3(-Math.cos(this.chaseYaw), 0, Math.sin(this.chaseYaw));
-        desiredPos.copy(p).addScaledVector(back, 2.6).add(new THREE.Vector3(0, 1.55, 0));
-        desiredLook.copy(p).addScaledVector(back, -1.6).add(new THREE.Vector3(0, 0.35, 0));
+        // Far and high enough to see the robot, the FUEL around it and where it's heading.
+        desiredPos.copy(p).addScaledVector(back, 4.1).add(new THREE.Vector3(0, 2.7, 0));
+        desiredLook.copy(p).addScaledVector(back, -2.2).add(new THREE.Vector3(0, 0.2, 0));
         break;
       }
       case 'driver': {

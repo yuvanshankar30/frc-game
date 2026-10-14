@@ -196,8 +196,10 @@ export function groundIntake(
     kickerNode = kit.tubeRoller(`${name}_kicker`, kx, ky, -W / 2 + inches(1.5), W / 2 - inches(1.5), inches(0.625), 0x2a2d33, g);
     kickerCenter = [kx, ky, 0];
   }
-  // Roller motor on the arm, near the pivot.
-  kit.motor(`${name}_motor`, [px + Math.cos(first.ang) * inches(2), py - Math.sin(first.ang) * inches(2), armZ - inches(1.6)], 'z', g);
+  // Roller motor on top of the arm near the pivot, clear of the bumper below it when deployed.
+  const along = inches(2.5);
+  const up = inches(1.7);
+  kit.motor(`${name}_motor`, [px + Math.cos(first.ang) * along + Math.sin(first.ang) * up, py - Math.sin(first.ang) * along + Math.cos(first.ang) * up, armZ - inches(1.6)], 'z', g);
   return { group: g, roller, rollerCenter: [rx, ry, 0] as [number, number, number], kickerNode, kickerCenter, deployAngleDeg: (first.ang * 180) / Math.PI };
 }
 

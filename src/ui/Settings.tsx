@@ -5,6 +5,7 @@ import {
   type Action, type AxisKey, type KeyboardBindings,
 } from '../core/input/bindings';
 import { CAMERA_LABELS, CAMERA_MODES } from '../render/cameras';
+import { FEATURES } from '../game/features';
 
 type Listen = { set: 'keyboard' | 'keyboard2'; kind: 'action' | 'axis'; key: string } | { set: 'gamepad'; key: Action } | null;
 
@@ -208,7 +209,7 @@ export function SettingsScreen() {
           </div>
           <div className="bind-table">
             {AXES.map((a) => keyRow('axis', a, AXIS_LABELS[a], kb.axes[a]))}
-            {ACTIONS.map((a) => keyRow('action', a, ACTION_LABELS[a], kb.actions[a]))}
+            {ACTIONS.filter((a) => FEATURES.climbing || a !== 'climb').map((a) => keyRow('action', a, ACTION_LABELS[a], kb.actions[a]))}
           </div>
         </div>
 
@@ -233,7 +234,7 @@ export function SettingsScreen() {
             />
           </div>
           <div className="bind-table">
-            {ACTIONS.map((a) => {
+            {ACTIONS.filter((a) => FEATURES.climbing || a !== 'climb').map((a) => {
               const isListening = listen?.set === 'gamepad' && listen.key === a;
               return (
                 <div key={a} style={{ display: 'contents' }}>

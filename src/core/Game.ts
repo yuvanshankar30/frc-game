@@ -13,6 +13,7 @@ import { applyEnvironment } from '../render/environment';
 import { useStore, type GameMode, type PlayerSetup, type Settings, type Hud } from '../ui/store';
 import { sfx } from './audio';
 import { sideTransform } from '../field/builder';
+import { FEATURES } from '../game/features';
 
 interface Player {
   /** Smoothed rotation command (keyboard keys ramp instead of snapping). */
@@ -271,7 +272,7 @@ export class Game {
           shoot: s.held.shoot,
           eject: s.held.eject,
           rev: s.pressed.rev,
-          climb: s.pressed.climb,
+          climb: FEATURES.climbing && s.pressed.climb,
         };
       });
       while (this.acc >= PHYSICS_DT && steps < 6) {

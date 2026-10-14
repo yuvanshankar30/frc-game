@@ -5,6 +5,7 @@ import { PERIODS, type Alliance } from '../game/scoring';
 import { CAMERA_LABELS } from '../render/cameras';
 import { FIELD, HUB } from '../field/rebuilt/dims';
 import { keyLabel, type KeyboardBindings } from '../core/input/bindings';
+import { FEATURES } from '../game/features';
 
 export function fmtClock(t: number) {
   const s = Math.max(0, Math.ceil(t));
@@ -136,7 +137,7 @@ export function DriverPanel({ p, style, outpost }: { p: PlayerHud; style: React.
         <Light on={p.spin > 0.85} label="FLYWHEEL" />
         <Light on={p.ready} label={p.shuttling ? 'PASS' : 'LOCKED'} good />
         <Light on={p.assist} label="ASSIST" />
-        <Light on={p.climbState !== 'none'} label={p.climbLevel ? `L${p.climbLevel}` : 'CLIMB'} good={p.climbLevel > 0} />
+        {FEATURES.climbing && <Light on={p.climbState !== 'none'} label={p.climbLevel ? `L${p.climbLevel}` : 'CLIMB'} good={p.climbLevel > 0} />}
         <span className="dp-hp">HP {outpost}</span>
       </div>
       {flip !== null && <div className="dp-flip">HUB flips in {fmtClock(flip)}</div>}
@@ -258,7 +259,7 @@ export function ControlsHelp({ kb }: { kb: KeyboardBindings }) {
     ['Intake', k(kb.actions.intake)],
     ['Shoot', k(kb.actions.shoot)],
     ['Eject', k(kb.actions.eject)],
-    ['Climb', k(kb.actions.climb)],
+    ...(FEATURES.climbing ? [['Climb', k(kb.actions.climb)] as [string, string]] : []),
     ['Human player', k(kb.actions.feed)],
     ['Camera', k(kb.actions.camera)],
     ['Aim assist', k(kb.actions.assist)],

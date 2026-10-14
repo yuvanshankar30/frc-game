@@ -6,6 +6,7 @@ import { keyLabel } from '../core/input/bindings';
 import { SCORING } from '../game/scoring';
 import { toast } from './toast';
 import { recordHighScore, type HighScore } from '../game/highscores';
+import { FEATURES } from '../game/features';
 
 export function GameView() {
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -77,7 +78,7 @@ function HudView({ hud, game, onQuit, onRestart }: { hud: Hud; game: Game | null
         <DriverPanel key={i} p={p} style={n === 1 ? { left: 14 } : { left: `calc(${(i * 100) / n}% + 14px)` }} outpost={hud.outpost[p.alliance]} />
       ))}
       {n === 1 && settings.minimap && hud.players[0] && <Minimap game={game} alliance={hud.players[0].alliance} />}
-      {n === 1 && hud.players[0] && (() => {
+      {n === 1 && FEATURES.climbing && hud.players[0] && (() => {
         const p = hud.players[0];
         const key = <kbd>{keyLabel(kb.actions.climb[0] ?? 'C')}</kbd>;
         if (p.canClimb && p.climbState === 'none') return <div className="climb-hint">{key} Climb to L1</div>;
@@ -195,7 +196,7 @@ function Results({ hud, onQuit, onRestart }: { hud: Hud; onQuit: () => void; onR
               <th>Shots</th>
               <th>Made</th>
               <th>Acc</th>
-              <th>Climb</th>
+              {FEATURES.climbing && <th>Climb</th>}
             </tr>
           </thead>
           <tbody>
@@ -208,7 +209,7 @@ function Results({ hud, onQuit, onRestart }: { hud: Hud; onQuit: () => void; onR
                 <td>{p.shots}</td>
                 <td>{p.scored}</td>
                 <td>{p.shots ? `${Math.round((p.scored / p.shots) * 100)}%` : '—'}</td>
-                <td>{p.climbLevel ? `L${p.climbLevel}` : '—'}</td>
+                {FEATURES.climbing && <td>{p.climbLevel ? `L${p.climbLevel}` : '—'}</td>}
               </tr>
             ))}
           </tbody>
