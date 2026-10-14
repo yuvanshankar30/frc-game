@@ -170,8 +170,17 @@ class AudioEngine {
    * FUEL bounces since last frame (world positions, impact speed m/s), heard from `ear`. The loudest few per frame
    * are played; a busy field becomes a soft patter in the distance.
    */
+  /**
+   * Set up the audio graph ahead of play (the reverb impulse and convolver take a noticeable moment). Called while a
+   * match loads so the first sound doesn't stall a frame.
+   */
+  warm() {
+    if (this.ensure()) this.noise();
+  }
+
   ballDrops(drops: readonly { x: number; y: number; z: number; speed: number }[], ear: { x: number; y: number; z: number }) {
-    if (!drops.length) return;
+    // Never build the audio graph mid-play for a bounce: wait for warm() / a field cue.
+    if (!drops.length || !this.ctx) return;
     const ctx = this.ensure();
     if (!ctx || ctx.state !== 'running') return;
     // At most ~30 drops a second, refilled over time.

@@ -34,7 +34,7 @@ function mergeInto(container: THREE.Object3D, isBoundary: (o: THREE.Object3D) =>
   if (meshes.length < 8) return 0;
 
   // Bucket geometry pieces by material + attribute layout.
-  const buckets = new Map<string, { mat: THREE.Material; geos: THREE.BufferGeometry[] }>();
+  const buckets = new Map<string, { mat: THREE.Material; geos: THREE.BufferGeometry[]; cast: boolean; receive: boolean }>();
   const done: THREE.Mesh[] = [];
   const rel = new THREE.Matrix4();
   for (const m of meshes) {
@@ -49,16 +49,16 @@ function mergeInto(container: THREE.Object3D, isBoundary: (o: THREE.Object3D) =>
         ? m.geometry.groups.map((g) => [mats[g.materialIndex ?? 0] ?? mats[0], slice(base, g.start, g.count)] as [THREE.Material, THREE.BufferGeometry])
         : [[mats[0], base]];
     for (const [mat, geo] of pieces) {
-      const key = `${mat.uuid}|${Object.entries(geo.attributes).map(([k, a]) => `${k}:${(a as THREE.BufferAttribute).normalized ? 'n' : ''}${(a as THREE.BufferAttribute).array.constructor.name}`).sort().join(',')}`;
+      const key = `${mat.uuid}|${m.castShadow ? 1 : 0}${m.receiveShadow ? 1 : 0}|${Object.entries(geo.attributes).map(([k, a]) => `${k}:${(a as THREE.BufferAttribute).normalized ? 'n' : ''}${(a as THREE.BufferAttribute).array.constructor.name}`).sort().join(',')}`;
       let b = buckets.get(key);
-      if (!b) buckets.set(key, (b = { mat, geos: [] }));
+      if (!b) buckets.set(key, (b = { mat, geos: [], cast: m.castShadow, receive: m.receiveShadow }));
       b.geos.push(geo);
     }
     done.push(m);
   }
   if (done.length < 8) return 0;
 
-  for (const { mat, geos } of buckets.values()) {
+  for (const { mat, geos, cast, receive } of buckets.values()) {
     // Keep each merged mesh under 32-bit-safe sizes and reasonable for culling.
     for (let k = 0; k < geos.length; k += 4000) {
       const merged = mergeGeometries(geos.slice(k, k + 4000), false);
@@ -66,6 +66,8 @@ function mergeInto(container: THREE.Object3D, isBoundary: (o: THREE.Object3D) =>
       merged.computeBoundingSphere();
       const mesh = new THREE.Mesh(merged, mat);
       mesh.name = `merged:${container.name}`;
+      mesh.castShadow = cast;
+      mesh.receiveShadow = receive;
       container.add(mesh);
     }
   }

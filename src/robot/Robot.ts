@@ -143,7 +143,9 @@ export class Robot {
     this.halfLength = f.length / 2 + f.bumperThickness;
     this.halfWidth = f.width / 2 + f.bumperThickness;
 
-    this.assembly = assemble(def, model);
+    // Bake parts that move together into a few meshes: a built-in robot is ~1000 small parts, each a draw call (twice
+    // with shadows).
+    this.assembly = assemble(def, model, true);
     this.visual.add(this.assembly.root);
     this.visual.add(makeBumpers(def, ALLIANCE_COLOR[alliance], label));
     this.visual.traverse((o) => {
@@ -665,6 +667,7 @@ export class Robot {
   /** Place the robot on the floor at (x, z) facing `yaw`. Carried FUEL moves with it. */
   teleport(x: number, z: number, yaw: number) {
     this.teleports++;
+    this.prevPose = null;
     if (this.climb !== 'none') this.endClimb();
     const carried = this.fuel ? this.stored.map((i) => this.toLocal(this.fuel!.position(i))) : [];
     this.body.setTranslation({ x, y: 0.005, z }, true);
@@ -1423,12 +1426,32 @@ export class Robot {
 
   private swayEuler = new THREE.Euler();
   /** Copy the physics pose (plus the cosmetic chassis sway) to the visual. */
-  sync() {
+  /** Pose before the frame's last physics step, for render interpolation (null right after a teleport). */
+  private prevPose: { p: THREE.Vector3; q: THREE.Quaternion } | null = null;
+  private poseP = new THREE.Vector3();
+  private poseQ = new THREE.Quaternion();
+
+  snapshot() {
+    const t = this.body.translation();
+    const r = this.body.rotation();
+    this.prevPose ??= { p: new THREE.Vector3(), q: new THREE.Quaternion() };
+    this.prevPose.p.set(t.x, t.y, t.z);
+    this.prevPose.q.set(r.x, r.y, r.z, r.w);
+  }
+
+  /** Move the visual to the physics pose, `alpha` (0–1) of the way from the previous step's pose. */
+  sync(alpha = 1) {
     const t = this.body.translation();
     const r = this.body.rotation();
     const w = this.sway;
-    this.visual.position.set(t.x, t.y + w.bob, t.z);
-    this.visual.quaternion.set(r.x, r.y, r.z, r.w).multiply(this.tmpQ.setFromEuler(this.swayEuler.set(w.roll, 0, w.pitch)));
+    const p = this.poseP.set(t.x, t.y, t.z);
+    const q = this.poseQ.set(r.x, r.y, r.z, r.w);
+    if (this.prevPose && alpha < 1) {
+      p.lerpVectors(this.prevPose.p, p, alpha);
+      q.slerpQuaternions(this.prevPose.q, q, alpha);
+    }
+    this.visual.position.set(p.x, p.y + w.bob, p.z);
+    this.visual.quaternion.copy(q).multiply(this.tmpQ.setFromEuler(this.swayEuler.set(w.roll, 0, w.pitch)));
     if (this.net && this.fuel) this.net.update(this.stored.map((i) => this.toLocal(this.fuel!.position(i))));
     // Swerve modules: steer visuals if the model tagged them (optional, cosmetic).
     if (this.def.drivetrain.type === 'swerve') {

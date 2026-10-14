@@ -30,6 +30,10 @@ export class FuelSystem {
   private tmpQ = new THREE.Quaternion();
   private tmpP = new THREE.Vector3();
   private zero = new THREE.Matrix4().makeScale(0, 0, 0);
+  /** Pose of each ball before the frame's last physics step (x y z qx qy qz qw), for render interpolation. */
+  private prev: Float32Array;
+  private hasPrev: Uint8Array;
+  private prevQ = new THREE.Quaternion();
   private time = 0;
 
   constructor(
@@ -38,6 +42,8 @@ export class FuelSystem {
     scene: THREE.Object3D,
   ) {
     this.lastVy = new Float32Array(capacity);
+    this.prev = new Float32Array(capacity * 7);
+    this.hasPrev = new Uint8Array(capacity);
     const geo = new THREE.SphereGeometry(FUEL.radius, 14, 10);
     const mat = new THREE.MeshStandardMaterial({ color: 0xf2c418, roughness: 0.85, metalness: 0 });
     this.mesh = new THREE.InstancedMesh(geo, mat, capacity);
@@ -241,7 +247,35 @@ export class FuelSystem {
   }
 
   /** Copy body transforms into the instanced mesh. */
-  sync() {
+  /** Remember every visible ball's pose; called right before the frame's last physics step. */
+  snapshot() {
+    const p = this.prev;
+    for (let i = 0; i < this.capacity; i++) {
+      if (this.state[i] !== 'field' && this.state[i] !== 'stored') {
+        this.hasPrev[i] = 0;
+        continue;
+      }
+      const b = this.bodies[i];
+      const t = b.translation();
+      const r = b.rotation();
+      const k = i * 7;
+      p[k] = t.x;
+      p[k + 1] = t.y;
+      p[k + 2] = t.z;
+      p[k + 3] = r.x;
+      p[k + 4] = r.y;
+      p[k + 5] = r.z;
+      p[k + 6] = r.w;
+      this.hasPrev[i] = 1;
+    }
+  }
+
+  /**
+   * Update the instances. `alpha` (0–1) is how far render time is between the last two physics steps: drawing the
+   * interpolated pose keeps motion even when the display rate and the 120 Hz physics don't line up.
+   */
+  sync(alpha = 1) {
+    const p = this.prev;
     for (let i = 0; i < this.capacity; i++) {
       if (this.state[i] !== 'field' && this.state[i] !== 'stored') {
         this.mesh.setMatrixAt(i, this.zero);
@@ -252,6 +286,12 @@ export class FuelSystem {
       const r = b.rotation();
       this.tmpP.set(t.x, t.y, t.z);
       this.tmpQ.set(r.x, r.y, r.z, r.w);
+      const k = i * 7;
+      // Placed / teleported balls (a jump of more than ~a ball per step) snap instead of sliding across.
+      if (alpha < 1 && this.hasPrev[i] && (p[k] - t.x) ** 2 + (p[k + 1] - t.y) ** 2 + (p[k + 2] - t.z) ** 2 < 0.04) {
+        this.tmpP.set(p[k] + (t.x - p[k]) * alpha, p[k + 1] + (t.y - p[k + 1]) * alpha, p[k + 2] + (t.z - p[k + 2]) * alpha);
+        this.tmpQ.slerpQuaternions(this.prevQ.set(p[k + 3], p[k + 4], p[k + 5], p[k + 6]), this.tmpQ, alpha);
+      }
       this.tmpM.compose(this.tmpP, this.tmpQ, ONE);
       this.mesh.setMatrixAt(i, this.tmpM);
     }

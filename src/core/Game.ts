@@ -98,6 +98,8 @@ export class Game {
     this.resize();
     if (import.meta.env.DEV) (window as unknown as { __game: Game }).__game = this;
     this.last = performance.now();
+    // Build the audio graph now (the match is loading) rather than on the first FUEL bounce mid-play.
+    sfx.warm();
     this.loop();
   }
 
@@ -231,6 +233,7 @@ export class Game {
     let dt = (now - this.last) / 1000;
     this.last = now;
     if (dt > 0.1) dt = 0.1;
+    this.adaptResolution(dt);
     this.fpsFrames++;
     this.fpsTime += dt;
     if (this.fpsTime >= 0.5) {
@@ -275,7 +278,10 @@ export class Game {
           climb: FEATURES.climbing && s.pressed.climb,
         };
       });
+      const due = Math.min(6, Math.floor(this.acc / PHYSICS_DT));
       while (this.acc >= PHYSICS_DT && steps < 6) {
+        // Poses before the last step: the frame is drawn between them and the poses after it.
+        if (steps === due - 1) this.snapshotPoses();
         this.stepSim(cmds, PHYSICS_DT);
         // Edge-triggered actions (climb, flywheel toggle) only apply to the first sub-step.
         for (const c of cmds) c.climb = c.rev = false;
@@ -291,8 +297,10 @@ export class Game {
     drops.length = 0;
 
     // Render.
-    for (const r of this.allRobots()) r.sync();
-    this.field.sync();
+    // Draw `alpha` of the way from the previous physics step to the latest one (the leftover time in the accumulator).
+    const alpha = this.paused ? 1 : Math.min(1, this.acc / PHYSICS_DT);
+    for (const r of this.allRobots()) r.sync(alpha);
+    this.field.sync(alpha);
     for (const p of this.players) p.rig.update(p.robot, dt);
     this.render();
 
@@ -302,6 +310,11 @@ export class Game {
       this.pushHud();
     }
   };
+
+  private snapshotPoses() {
+    for (const r of this.allRobots()) r.snapshot();
+    this.field.snapshot();
+  }
 
   private stepSim(cmds: RobotCommand[], dt: number) {
     this.time += dt;
@@ -372,6 +385,43 @@ export class Game {
       r.render(this.scene, p.rig.camera);
     });
     r.setScissorTest(false);
+  }
+
+  // ------------------------------------------------------------ adaptive resolution
+  /** Shortest recent frame interval: the display's refresh period when the GPU keeps up. */
+  private refresh = 1 / 60;
+  private frameEma = 1 / 60;
+  private slowFor = 0;
+  private fastFor = 0;
+  private resScale = 1;
+
+  /**
+   * Keep the frame rate up on a GPU that can't draw full resolution at the display rate: step the pixel ratio down
+   * (never below 1×) while frames run well over the refresh period, and back up after a stretch with headroom. A
+   * machine that keeps up never leaves full quality.
+   */
+  private adaptResolution(dt: number) {
+    if (this.paused || dt <= 0 || dt >= 0.1 || document.hidden) return;
+    this.refresh = Math.min(1 / 30, Math.max(1 / 240, Math.min(this.refresh * 1.002, dt)));
+    this.frameEma += (dt - this.frameEma) * 0.05;
+    const max = Math.min(window.devicePixelRatio, this.config.settings.pixelRatio);
+    if (this.frameEma > this.refresh * 1.4) {
+      this.slowFor += dt;
+      this.fastFor = 0;
+    } else {
+      this.slowFor = 0;
+      if (this.frameEma < this.refresh * 1.12) this.fastFor += dt;
+    }
+    let next = this.resScale;
+    if (this.slowFor > 1.5 && max * this.resScale > 1.01) next = Math.max(1 / max, this.resScale - 0.15);
+    else if (this.fastFor > 6 && this.resScale < 1) next = Math.min(1, this.resScale + 0.1);
+    if (next !== this.resScale) {
+      this.resScale = next;
+      this.slowFor = this.fastFor = 0;
+      this.frameEma = this.refresh;
+      this.renderer.setPixelRatio(max * next);
+      this.resize();
+    }
   }
 
   private resize() {

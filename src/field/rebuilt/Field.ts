@@ -8,6 +8,7 @@ import {
 import type { Alliance } from '../../game/scoring';
 import { createCarpetTexture, aprilTagTexture, netTexture } from './textures';
 import { inches } from '../../util/units';
+import { mergeStatic } from '../../cad/optimize';
 
 export const ALLIANCE_COLOR: Record<Alliance, number> = { blue: 0x1f5fff, red: 0xe02020 };
 const ALLIANCE_DARK: Record<Alliance, number> = { blue: 0x0a2a8a, red: 0x7a0c0c };
@@ -86,6 +87,9 @@ export class Field {
     this.towers = { blue: this.buildTower('blue'), red: this.buildTower('red') };
     this.depots = { blue: this.buildDepot('blue'), red: this.buildDepot('red') };
     this.outposts = { blue: this.buildOutpost('blue'), red: this.buildOutpost('red') };
+    // Nothing on the field moves once built (the HUB lights only change shared materials), so its few hundred parts
+    // are baked into one mesh per material. Done before the FUEL is added.
+    mergeStatic([this.root], () => false);
     this.fuel = new FuelSystem(world, 620, this.root);
   }
 
@@ -569,7 +573,11 @@ export class Field {
     }
   }
 
-  sync() {
-    this.fuel.sync();
+  snapshot() {
+    this.fuel.snapshot();
+  }
+
+  sync(alpha = 1) {
+    this.fuel.sync(alpha);
   }
 }
