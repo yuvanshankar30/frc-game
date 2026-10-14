@@ -45,8 +45,9 @@ export const r254: BuiltinRobot = {
     storage: {
       capacity: 50,
       preload: 8,
-      // Inside the blue box (ahead of the shooter tower).
-      box: { center: [inches(3.5), inches(11.3), 0], size: [inches(19), inches(17.6), W - inches(1.8)] },
+      // Inside the blue box (ahead of the shooter tower). The floor is the top of the timing belts (3.3in), not the
+      // belly pan, so stored FUEL rides above the frame rails instead of sinking into the drivetrain.
+      box: { center: [inches(3.5), inches(11.7), 0], size: [inches(19), inches(16.8), W - inches(1.8)] },
       net: { stretch: inches(1.5), color: '#0d0e10' },
     },
     shooter: {
@@ -87,6 +88,9 @@ export const r254: BuiltinRobot = {
     for (let k = 0; k < 6; k++) kit.box(`belt_${k}`, [inches(2.5), y0 + inches(0.55), -W / 2 + inches(3) + k * inches(4.2)], [L - inches(9), inches(0.3), inches(1.4)], M.belt(), belts);
     for (const x of [bx1 - inches(1), bx0 + inches(0.5)]) kit.cyl('belt_roller', [x, y0 + inches(0.55), 0], inches(0.5), W - inches(2), 'z', M.steel(), undefined, 12);
     kit.motor('belt_motor', [bx0 + inches(0.5), y0 - inches(1.3), W / 2 - inches(3)], 'y', undefined, true);
+    // Black back plate closing the box under the feed roller: the hopper's back wall, so FUEL waiting for the drum
+    // isn't seen sitting in the bumper well from behind.
+    kit.box('hopper_back', [bx0 - inches(0.3), (y0 + inches(11.6)) / 2, 0], [inches(0.25), inches(11.6) - y0, W - inches(1.4)], M.anodBlack());
 
     // ---------- rear shooter: stacked pocketed plates, full-width drum, hood + stacked hood rollers, gears + belts
     const SX = -L / 2 + inches(3.6);
