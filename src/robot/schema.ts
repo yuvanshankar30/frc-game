@@ -171,6 +171,8 @@ export const robotSchema = z.object({
       maxScoreSpeed: z.number().positive().nullable().default(null),
       /** The hood folds down to its lowest angle whenever the robot isn't shooting. */
       hoodStowsIdle: z.boolean().default(false),
+      /** With hoodStowsIdle: the angle (deg, may be under hoodMin) the hood folds to when idle; default hoodMin. */
+      hoodStowAngle: z.number().nullable().default(null),
     })
     .nullable()
     .default(null),

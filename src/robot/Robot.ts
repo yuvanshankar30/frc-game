@@ -152,8 +152,11 @@ export class Robot {
     // Bake parts that move together into a few meshes: a built-in robot is ~1000 small parts, each a draw call (twice
     // with shadows).
     // A net drawn into the model (shown in previews) is swapped for the live one that stretches over the pile.
-    const staticNet = def.storage.net ? model.getObjectByName('hopper_net_top') : undefined;
+    let staticNet: THREE.Object3D | undefined;
+    if (def.storage.net) model.traverse((o) => void (!staticNet && (o.name === 'hopper_net_top' || o.name.startsWith('hopper_net_top#')) && (staticNet = o)));
     if (staticNet) staticNet.visible = false; // hidden parts stay out of the merge
+    // A net over only part of the hopper is drawn there, and doesn't raise the whole hopper's ceiling.
+    this.netStretch = staticNet ? 0 : (def.storage.net?.stretch ?? 0);
     this.assembly = assemble(def, model, true);
     this.visual.add(this.assembly.root);
     this.visual.add(makeBumpers(def, ALLIANCE_COLOR[alliance], label));
@@ -315,7 +318,7 @@ export class Robot {
     const hy = s.y / 2;
     const hz = s.z / 2;
     add(c.x, c.y - hy - t / 2, c.z, hx + t, t / 2, hz + t); // floor
-    const netStretch = this.def.storage.net?.stretch ?? 0;
+    const netStretch = this.netStretch;
     this.hopperRoofY = c.y + hy + netStretch + t / 2;
     this.hopperRoof = add(c.x, this.hopperRoofY, c.z, hx + t, t / 2, hz + t); // roof (or the net at full stretch)
     if (netStretch > 0) {
@@ -729,6 +732,8 @@ export class Robot {
     return new THREE.Vector3(t.x, t.y, t.z);
   }
 
+  /** How far a net over the whole hopper lets carried FUEL stack above it (0 without one). */
+  private netStretch = 0;
   /** Draped net over the hopper (visual), if the robot has one. */
   private net: HopperNet | null = null;
 
@@ -991,7 +996,7 @@ export class Robot {
 
   /** How far carried FUEL can stack above the hopper box: a net's stretch, or an expanding hopper's raised roof. */
   private hopperHeadroom() {
-    return (this.def.storage.net?.stretch ?? 0) + (this.def.lift?.mode === 'expand' ? this.liftPos : 0);
+    return this.netStretch + (this.def.lift?.mode === 'expand' ? this.liftPos : 0);
   }
 
   /** FUEL the robot can hold right now: an expanding hopper holds more as its roof rises. */
@@ -1140,8 +1145,10 @@ export class Robot {
       case 'hood': {
         const sh = this.def.shooter;
         if (sh && sh.hoodMin !== null && sh.hoodMax !== null && sh.hoodMax !== sh.hoodMin) {
+          // A hood that folds away when idle (hoodStowAngle) goes past its shooting range, on the same line.
+          const lo = Math.min(0, ((sh.hoodStowAngle ?? sh.hoodMin) - sh.hoodMin) / (sh.hoodMax - sh.hoodMin));
           const t = (this.hoodAngle - sh.hoodMin) / (sh.hoodMax - sh.hoodMin);
-          jt.target = d.stowed + clamp(t, 0, 1) * (d.active - d.stowed);
+          jt.target = d.stowed + clamp(t, lo, 1) * (d.active - d.stowed);
         }
         break;
       }
@@ -1270,7 +1277,7 @@ export class Robot {
       this.turretYaw[b] = approach(this.turretYaw[b] ?? 0, this.turretGoal[b], sh.turretSpeed * DEG * dt);
     }
     // A hood that stows when idle folds down to its lowest angle until the driver asks for a shot.
-    const hoodGoal = sh.hoodStowsIdle && sh.hoodMin !== null && !this.shootHeld ? sh.hoodMin : results[0].elev / DEG;
+    const hoodGoal = sh.hoodStowsIdle && sh.hoodMin !== null && !this.shootHeld ? (sh.hoodStowAngle ?? sh.hoodMin) : results[0].elev / DEG;
     this.hoodAngle = approach(this.hoodAngle, hoodGoal, 240 * dt);
     return this.aimCache;
   }
@@ -1437,7 +1444,8 @@ export class Robot {
     const local = { x: barrel.pivot[0] + ex * c + ez * s, y: barrel.exit[1], z: barrel.pivot[2] - ex * s + ez * c };
     const pos = this.toWorld(local, new THREE.Vector3());
     const dirYaw = this.yaw + sh.yawOffset * DEG + turret + gauss() * spread;
-    const hood = sh.hoodMin !== null ? this.hoodAngle * DEG : a.elev;
+    // A hood folded away (stowed below its range) still launches no lower than its shooting range.
+    const hood = sh.hoodMin !== null ? Math.max(sh.hoodMin, this.hoodAngle) * DEG : a.elev;
     const elev = hood + gauss() * spread;
     const speed = a.speed * wheel * (1 + gauss() * (spread > 0 ? 0.01 : 0));
     const ev = this.pointVelocity(pos);

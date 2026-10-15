@@ -18,8 +18,11 @@ import { TURN_RATE, TURN_ACCEL } from '../../robot/schema';
  *    net over the bump").
  *  - Dye Rotor (V10): round spoked pan, curved outer wall on standoffs, central tower with stacked omni wheels, spiral
  *    hook with passive omni rollers onto 3in TTB urethane wheels — single-stream feed, ~12–14 BPS gap-free.
- *  - Shooter (V11): A-frame hood plates, dual GT2 belts over the hood side plates, hood roller, four Kraken X44 on a
- *    3in flywheel; turret 55.7:1 on one X44 with a flex-wheel cable-chain tensioner; T-shaped pocketed top deck.
+ *  - Shooter (V11): A-frame hood side plates pivoting on the flywheel axis (binder Q&A: coaxial), dual GT2 belts over
+ *    them, hood roller at the apex, 85.3:1 7075 sector gear on one X44; they nest into the base when stowed (1/8in
+ *    clearance). Four Kraken X44 on a 3in flywheel with .25in copper mass disks. Turret 55.7:1 on one X44, flex-wheel
+ *    cable-chain tensioner; the shooter is carried by the X-contact bearing on top of the Dye Rotor.
+ *  - Hopper: 85+ FUEL under the TRENCH, 100+ with the net over the bump; .033 panels on the structural bumpers.
  *  - No climber.
  */
 const L = inches(23.5);
@@ -29,7 +32,13 @@ const EXT = inches(10);
 const LIFT = inches(8.5);
 const TEAL = 0x1a9e9a;
 const DARK = 0x1d1f23;
-const TP: [number, number, number] = [-inches(2.5), inches(13), -inches(1.5)]; // turret pivot (above the rotor tower; A-frame tops out under 21.5in)
+/** Turret bearing (X-contact, on top of the Dye Rotor's feed column): the shooter turns about its axis. */
+const TP: [number, number, number] = [-inches(2.5), inches(15), -inches(1.5)];
+/** Hood pivot = flywheel axis (binder Q&A: "the physical pivot is coaxial with the shooter wheels"). */
+const FW: [number, number, number] = [TP[0] + inches(2.6), TP[1] + inches(2.2), TP[2]];
+/** The hood (the A-frame side plates) is modeled at a 60° launch; it tilts 2/3° per degree of launch angle and folds
+ * back into the turret base when idle, which keeps the robot under the TRENCH arm. */
+const HOOD_K = 2 / 3;
 const ROTOR: [number, number, number] = [-inches(1.5), 0, inches(1)];
 
 export const r4414: BuiltinRobot = {
@@ -41,7 +50,7 @@ export const r4414: BuiltinRobot = {
     color: '#1a9e9a',
     description:
       'The 2026 champion. Structural bumpers double as smoked hopper walls on a teal truss. A rack-driven intake slides out from under a carbon-fiber hopper box that holds 85+ FUEL, and pumps back in while shooting to push FUEL into the rotor. The Dye Rotor single-streams FUEL up a spiral hook into an A-frame turret with a 3in flywheel that shoots on the move.',
-    highlights: ['2026 World Champion (Daly captain)', 'Rack slide intake + 85+ FUEL hopper', 'Dye Rotor → single stream ~14 BPS', '55.7:1 turret, 4× X44 flywheel, SOTM', 'Fits under the TRENCH', 'No climber'],
+    highlights: ['2026 World Champion (Daly captain)', 'Rack slide intake + 85+ FUEL hopper', 'Dye Rotor → single stream ~14 BPS', '55.7:1 turret, 4× X44 flywheel, SOTM', 'Hood folds into the base: fits under the TRENCH', 'No climber'],
     sources: ['4414 2026 Technical Binder: 2026.team4414.com (CAD renders, Dye Rotor V10, Shooter V11, subsystem notes)', 'Chief Delphi: Team 4414 HighTide 2026 Tech Binder (RIPCURRENT)'],
     frame: { length: L, width: W, height: H, mass: 60, comHeight: 0.17, bumperThickness: inches(3.5), bumperHeight: inches(5.5) },
     drivetrain: { type: 'swerve', maxSpeed: 4.1, maxAccel: 10, maxOmega: TURN_RATE, maxAlpha: TURN_ACCEL },
@@ -53,10 +62,11 @@ export const r4414: BuiltinRobot = {
       compress: { from: 0, to: 0.6, period: 0.9 },
     },
     storage: {
-      capacity: 88,
+      capacity: 100, // "85+ balls under the trench, 100+ with net over the bump"
       preload: 8,
-      // Back wall to just past the bumper face: ahead of that the extension has no floor (FUEL rolls in under its panel).
-      box: { center: [(-L / 2 + inches(1) + L / 2 + inches(4.5)) / 2, inches(11.85), 0], size: [L + inches(3.5), inches(18.3), W - inches(1.5)] },
+      // Back wall to just past the bumper face (ahead of that the extension has no floor: FUEL rolls in under its
+      // panel), up to the turret plate. The rest of a full load rides out of sight under the net.
+      box: { center: [(-L / 2 + inches(1) + L / 2 + inches(4.5)) / 2, inches(8.45), 0], size: [L + inches(3.5), inches(11.5), W - inches(1.5)] },
       net: { stretch: inches(5), color: '#101114' },
       indexer: { mode: 'rotor', center: [-inches(1.5), inches(1)], rps: 2.25 },
     },
@@ -65,6 +75,9 @@ export const r4414: BuiltinRobot = {
       angle: 60,
       hoodMin: 45,
       hoodMax: 76,
+      // The hood side plates nest into the turret base when stowed (binder Q&A), under the TRENCH arm.
+      hoodStowsIdle: true,
+      hoodStowAngle: -10, // folds ~47° back from a 60° shot
       minSpeed: 4,
       maxSpeed: 16,
       rate: 14,
@@ -85,8 +98,6 @@ export const r4414: BuiltinRobot = {
     const base = swerveBase(kit, rig, L, W, { electronics: [-inches(5), -W / 2 + inches(4.5)] });
     const y0 = base.railTop;
     const dark = mat(DARK, { metal: 0.45, rough: 0.45 });
-    // Smoked polycarb walls with netting over them, as on the robot.
-    const smoke = M.smokeNet();
 
     // ---------- drivetrain: teal pre-drilled tube with chamfered corners + rotor cross rails
     const tealTube = mat(TEAL, { metal: 0.5, rough: 0.4 });
@@ -99,37 +110,66 @@ export const r4414: BuiltinRobot = {
       }
     }
 
-    // ---------- structural bumper walls: smoked polycarb on teal pocketed truss
+    // ---------- structural bumper walls (binder "Bumpers"): .033 dark hopper panels riveted to bent aluminum on the
+    // bumper backing, a teal pocketed truss rim along the top of the back and sides, full-height teal truss towers at
+    // the chamfered back corners, and a carbon-fiber strip where the extension slides in.
     const wallTop = H - inches(0.2);
     const wallH = wallTop - y0;
     const wy = y0 + wallH / 2;
     const CH = inches(3); // rear chamfer
+    const panel = mat(0x3d424a, { opacity: 0.68, rough: 0.3, metal: 0.15 });
+    const rimH = inches(1.6);
+    const rivetM = mat(0x9da3aa, { metal: 0.8, rough: 0.3 });
+    const rivetRow = (name: string, a: [number, number, number], b: [number, number, number], n: number) => {
+      for (let k = 0; k <= n; k++) {
+        const u = k / n;
+        kit.cyl(`${name}_${k}`, [a[0] + (b[0] - a[0]) * u, a[1] + (b[1] - a[1]) * u, a[2] + (b[2] - a[2]) * u], inches(0.1), inches(0.05), Math.abs(b[2] - a[2]) > Math.abs(b[0] - a[0]) ? 'x' : 'z', rivetM, undefined, 8);
+      }
+    };
+    const sideX0 = -L / 2 + CH;
+    const sideX1 = L / 2 - inches(1);
     for (const s of [-1, 1]) {
-      kit.box('wall_side', [inches(1.5) - CH / 2, wy, s * (W / 2 + inches(0.15))], [L - CH - inches(3), wallH, inches(0.1)], smoke);
-      // Teal top rail along the wall edge, a truss post mid-wall.
-      kit.box('wall_rail_top', [inches(1.5) - CH / 2, wallTop - inches(0.35), s * (W / 2 + inches(0.3))], [L - CH - inches(3), inches(0.7), inches(0.5)], tealTube);
-      kit.truss('truss_mid', [-inches(3.4), y0, s * (W / 2 + inches(0.32))], [-inches(1.6), y0, s * (W / 2 + inches(0.32))], wallH, { color: TEAL, member: inches(0.32) });
-      // carbon-fiber end plate where the extension slides in
-      kit.panel('cf_end', [L / 2 - inches(2.6), wy, s * (W / 2 + inches(0.32))], inches(3.2), wallH, M.cf());
-      // Chamfered rear corner: smoked panel framed by a full-height teal truss tower (the look of the binder renders).
-      const cx = -L / 2 + CH / 2 - inches(0.3);
-      const cz = s * (W / 2 - CH / 2 + inches(0.3));
-      const cp = kit.box('wall_chamfer', [cx, wy, cz], [CH * 1.41, wallH, inches(0.1)], smoke);
-      cp.rotation.y = s * Math.PI * 0.25;
+      const z = s * (W / 2 + inches(0.15));
+      kit.box('wall_side', [(sideX0 + sideX1) / 2, wy, z], [sideX1 - sideX0, wallH, inches(0.06)], panel);
+      // Teal truss rim along the top, from the chamfer to the carbon strip.
+      kit.truss('rim_side', [sideX0, wallTop - rimH, z + s * inches(0.18)], [sideX1 - inches(3.2), wallTop - rimH, z + s * inches(0.18)], rimH, { color: TEAL, member: inches(0.22), bay: inches(1.8) });
+      rivetRow(`wall_rivets_bot${s}`, [sideX0 + inches(0.6), y0 + inches(0.5), z + s * inches(0.05)], [sideX1 - inches(0.6), y0 + inches(0.5), z + s * inches(0.05)], 16);
+      // Carbon-fiber end strip, riveted, where the extension slides in.
+      kit.panel('cf_end', [sideX1 - inches(1.6), wy, z + s * inches(0.12)], inches(3.2), wallH, M.cf());
+      rivetRow(`cf_rivets${s}`, [sideX1 - inches(0.5), y0 + inches(1), z + s * inches(0.2)], [sideX1 - inches(0.5), wallTop - inches(1), z + s * inches(0.2)], 12);
+      rivetRow(`cf_rivets_b${s}`, [sideX1 - inches(2.7), y0 + inches(1), z + s * inches(0.2)], [sideX1 - inches(2.7), wallTop - inches(1), z + s * inches(0.2)], 12);
+      // Chamfered rear corner: a panel framed by a full-height teal truss tower.
       const ca: [number, number, number] = [-L / 2 - inches(0.35), y0, s * (W / 2 - CH)];
       const cb: [number, number, number] = [-L / 2 + CH, y0, s * (W / 2 + inches(0.35))];
-      kit.truss('truss_chamfer', ca, cb, wallH, { color: TEAL, member: inches(0.32) });
-      kit.truss('truss_corner_back', [-L / 2 - inches(0.35), y0, s * (W / 2 - CH - inches(3.2))], ca, wallH, { color: TEAL, member: inches(0.32) });
-      kit.truss('truss_corner_side', cb, [-L / 2 + CH + inches(3.2), y0, s * (W / 2 + inches(0.35))], wallH, { color: TEAL, member: inches(0.32) });
+      const cp = kit.box('wall_chamfer', [(ca[0] + cb[0]) / 2, wy, (ca[2] + cb[2]) / 2], [CH * 1.45, wallH, inches(0.06)], panel);
+      cp.rotation.y = s * Math.PI * 0.25;
+      kit.truss('truss_chamfer', ca, cb, wallH, { color: TEAL, member: inches(0.28) });
     }
+    kit.box('wall_back', [-L / 2 - inches(0.15), wy, 0], [inches(0.06), wallH, W - 2 * CH], panel);
+    kit.truss('rim_back', [-L / 2 - inches(0.33), wallTop - rimH, -(W / 2 - CH)], [-L / 2 - inches(0.33), wallTop - rimH, W / 2 - CH], rimH, { color: TEAL, member: inches(0.22), bay: inches(1.8) });
+    rivetRow('wall_rivets_back', [-L / 2 - inches(0.2), y0 + inches(0.5), -(W / 2 - CH - inches(0.5))], [-L / 2 - inches(0.2), y0 + inches(0.5), W / 2 - CH - inches(0.5)], 18);
+    kit.sponsors('fabworks', [-L / 2 - inches(0.2), wallTop - inches(5), 0], inches(10), inches(2.6), ['fabworks'], 'zy', -1, undefined, '#c9ced4');
     // Green status LED strip along the top of the left wall.
-    kit.led('led_strip', [inches(1.5) - CH / 2, wallTop + inches(0.1), -(W / 2 + inches(0.3))], [L - CH - inches(3), inches(0.25), inches(0.3)], 0x39ff5a);
-    kit.box('wall_back', [-L / 2 - inches(0.15), wy, 0], [inches(0.1), wallH, W - 2 * CH], smoke);
-    kit.box('wall_rail_back', [-L / 2 - inches(0.3), wallTop - inches(0.35), 0], [inches(0.5), inches(0.7), W - 2 * CH], tealTube);
-    // ---------- top deck: T-shaped pocketed truss across the width + turret plate
-    const deckY = TP[1] + inches(0.5); // the turret plate is part of the T-shaped deck (Shooter V11)
-    kit.pocketPlate('deck_arm', [-inches(3.5), deckY, 0], inches(4), W - inches(1), { color: DARK, plane: 'xz', cell: inches(2), rib: inches(0.35) });
-    kit.pocketPlate('deck_spine', [-L / 2 + inches(4), deckY, -inches(1.5)], inches(6), inches(9), { color: DARK, plane: 'xz', cell: inches(2), rib: inches(0.35) });
+    kit.led('led_strip', [(sideX0 + sideX1) / 2, wallTop + inches(0.1), -(W / 2 + inches(0.3))], [sideX1 - sideX0 - inches(4), inches(0.25), inches(0.3)], 0x39ff5a);
+
+    // ---------- turret plate (binder "Turret"): a keyhole of pocketed plate, the bearing ring around the turret plus an
+    // arm back to a crossbar on the back wall, under the rim. The shooter rides the X-contact bearing on the rotor column.
+    const deckY = TP[1] - inches(0.4);
+    const key = new THREE.Shape();
+    key.absarc(0, 0, inches(7.4), 0, Math.PI * 2, false);
+    const keyHole = new THREE.Path();
+    keyHole.absarc(0, 0, inches(5.2), 0, Math.PI * 2, true);
+    key.holes.push(keyHole);
+    const keyGeo = new THREE.ExtrudeGeometry(key, { depth: inches(0.19), bevelEnabled: false, curveSegments: 40 });
+    keyGeo.rotateX(-Math.PI / 2);
+    keyGeo.translate(TP[0], deckY, TP[2]);
+    kit.add(new THREE.Mesh(keyGeo, dark), 'deck_ring');
+    for (let k = 0; k < 24; k++) {
+      const a = (k / 24) * Math.PI * 2;
+      kit.cyl(`deck_slot_${k}`, [TP[0] + Math.cos(a) * inches(6.3), deckY + inches(0.2), TP[2] + Math.sin(a) * inches(6.3)], inches(0.18), inches(0.03), 'y', mat(0x0d0e10), undefined, 8);
+    }
+    kit.pocketPlate('deck_arm', [(TP[0] - inches(7) - L / 2) / 2, deckY + inches(0.1), TP[2]], -L / 2 - TP[0] + inches(7), inches(5), { color: DARK, plane: 'xz', cell: inches(1.8), rib: inches(0.3) });
+    kit.pocketPlate('deck_cross', [-L / 2 + inches(1.6), deckY + inches(0.1), 0], inches(3.2), W - 2 * CH, { color: DARK, plane: 'xz', cell: inches(1.8), rib: inches(0.3) });
 
     // ---------- extending hopper + intake (binder "Intake" CAD: a U-shaped carbon-fiber box on 10DP racks)
     // The whole front of the hopper telescopes: a full-height CF front panel and two tall side panels slide forward on
@@ -145,6 +185,7 @@ export const r4414: BuiltinRobot = {
     const nose = face + EXT; // deployed front panel; stowed it's flush with the bumper face
     const bx0 = nose - inches(15); // rear edge of the extension sides (still overlaps the fixed walls when deployed)
     const boxTop = wallTop - inches(0.6);
+    const extPanel = mat(0x33373d, { metal: 0.55, rough: 0.4 });
     const mainC: [number, number, number] = [nose - inches(2.3), inches(2.6), 0];
     const botC: [number, number, number] = [nose - inches(0.9), inches(1.05), 0];
     const mouthTop = bumperTop + inches(1.5); // FUEL rolls in under the front panel
@@ -180,7 +221,10 @@ export const r4414: BuiltinRobot = {
     };
     for (const s of [-1, 1]) {
       const z = s * zs;
-      kit.add(new THREE.Mesh(extrude(sidePts, z), M.cf()), `ext_side_${s}`, slide);
+      kit.add(new THREE.Mesh(extrude(sidePts, z), extPanel), `ext_side_${s}`, slide);
+      // Rivet rows along the top and front edges of the extension sides.
+      for (let k = 0; k < 9; k++) kit.cyl(`ext_rivet_top_${s}_${k}`, [bx0 + inches(0.8) + k * ((nose - inches(7) - bx0) / 8), boxTop - inches(0.5), z + s * inches(0.08)], inches(0.1), inches(0.05), 'z', rivetM, slide, 8);
+      for (let k = 0; k < 7; k++) kit.cyl(`ext_rivet_nose_${s}_${k}`, [nose - inches(0.6), mouthTop + inches(0.8) + k * ((boxTop - inches(3.5) - mouthTop) / 6), z + s * inches(0.08)], inches(0.11), inches(0.05), 'z', rivetM, slide, 8);
       kit.add(new THREE.Mesh(extrude(platePts, z - s * inches(0.35)), M.cf()), `intake_plate_${s}`, drop);
       // Riveted aluminum edge angle along the bottom of the extension + the front edge.
       kit.box(`ext_angle_bot_${s}`, [(bx0 + nose) / 2, bumperTop + inches(0.6), z - s * inches(0.35)], [nose - bx0, inches(0.6), inches(0.6)], M.anodBlack(), slide);
@@ -211,8 +255,8 @@ export const r4414: BuiltinRobot = {
     // Full-width CF front panel over the intake mouth, with the binder's center cutout for extra capacity.
     const fpTop = boxTop - inches(2.5);
     const cut = inches(12);
-    for (const s of [-1, 1]) kit.box(`ext_front_${s}`, [nose - inches(0.05), (mouthTop + fpTop) / 2, s * (zs + cut / 2) / 2], [inches(0.1), fpTop - mouthTop, zs - cut / 2], M.cf(), slide);
-    kit.box('ext_front_mid', [nose - inches(0.05), (mouthTop + fpTop - inches(3)) / 2, 0], [inches(0.1), fpTop - inches(3) - mouthTop, cut], M.cf(), slide);
+    for (const s of [-1, 1]) kit.box(`ext_front_${s}`, [nose - inches(0.05), (mouthTop + fpTop) / 2, s * (zs + cut / 2) / 2], [inches(0.1), fpTop - mouthTop, zs - cut / 2], extPanel, slide);
+    kit.box('ext_front_mid', [nose - inches(0.05), (mouthTop + fpTop - inches(3)) / 2, 0], [inches(0.1), fpTop - inches(3) - mouthTop, cut], extPanel, slide);
     kit.box('ext_front_lip', [nose - inches(0.3), mouthTop, 0], [inches(0.6), inches(0.5), 2 * zs], M.anodBlack(), slide);
     // 3in main roller + 1.5in bottom roller (X44 1.5:1) low between the plates, dark grip tubing.
     kit.tubeRoller('intake_main', mainC[0], mainC[1], -zs + inches(0.4), zs - inches(0.4), inches(1.5), 0x34383f, drop);
@@ -269,66 +313,93 @@ export const r4414: BuiltinRobot = {
     // Three rotor motors (Krakens with Talon FX) standing at the rotor edge.
     for (let k = 0; k < 3; k++) kit.motor(`rotor_motor_${k}`, [ROTOR[0] + inches(4 + k * 1.2), ry + inches(1.4), ROTOR[2] + inches(9.5 - k * 2.6)], 'y');
 
-    // ---------- turret column + A-frame shooter (rotates)
-    kit.cyl('turret_column', [TP[0], (ry + inches(6.5) + TP[1]) / 2, TP[2]], inches(2.4), TP[1] - ry - inches(6.5), 'y', dark, undefined, 24);
+    // ---------- turret (binder "Shooter V11" / "Turret"): feed column up from the rotor to the X-contact bearing, a
+    // turret base with the 4× X44 stacked on the flywheel axis, and the A-frame hood. The hood side plates are trussed
+    // arches carrying a hood roller at the apex, driven by dual GT2 belts running up their legs; they pivot about the
+    // 3in copper-weighted flywheel and nest into the base when stowed. Turret: 55.7:1 on one X44, cable chain on a
+    // constant-force-spring tensioner.
+    kit.cyl('turret_column', [TP[0], (ry + inches(6.5) + TP[1]) / 2, TP[2]], inches(2.6), TP[1] - ry - inches(6.5), 'y', dark, undefined, 24);
+    for (let k = 0; k < 4; k++) kit.omni(`column_omni_${k}`, [TP[0] + inches(2.4), ry + inches(7.5) + k * inches(1.6), TP[2]], inches(0.7), inches(0.6), 'z', undefined, 0x30333a);
     kit.bearingRing('turret_bearing', [TP[0], TP[1], TP[2]], inches(4.6), undefined, 0x2a2c31);
     const turretG = kit.group('t_turret');
-    // Oval turret plate (pocketed) with a big spur gear ring under it.
-    const oval = new THREE.Shape();
-    oval.absellipse(0, 0, inches(6.2), inches(5.2), 0, Math.PI * 2, false, 0);
-    for (let k = 0; k < 6; k++) {
-      const a0 = (k / 6) * Math.PI * 2 + 0.15;
-      const h = new THREE.Path();
-      h.absarc(Math.cos(a0 + 0.35) * inches(3.6), Math.sin(a0 + 0.35) * inches(3), inches(0.9), 0, Math.PI * 2, true);
-      oval.holes.push(h);
-    }
-    const ovalGeo = new THREE.ExtrudeGeometry(oval, { depth: inches(0.25), bevelEnabled: false });
-    ovalGeo.rotateX(-Math.PI / 2);
-    ovalGeo.translate(TP[0] + inches(0.8), TP[1] + inches(0.4), TP[2]);
-    kit.add(new THREE.Mesh(ovalGeo, dark), 't_plate', turretG);
-    kit.cyl('t_gear', [TP[0], TP[1] - inches(0.25), TP[2]], inches(5.3), inches(0.3), 'y', mat(0x8a6a40, { metal: 0.6, rough: 0.35 }), turretG, 64);
-    // Four Kraken X44 stacked under the plate (flywheel drive), copper gear accents.
-    for (let k = 0; k < 4; k++) kit.motor(`t_x44_${k}`, [TP[0] - inches(3.2), TP[1] - inches(1.6) - k * inches(0.05), TP[2] + inches(-3 + k * 2)], 'y', turretG, true);
-    kit.motor('t_turret_x44', [TP[0] + inches(4.8), TP[1] - inches(1.6), TP[2] - inches(3)], 'y', turretG, true);
-    // A-frame hood plates with GT2 belts, hood rollers and the 3in flywheel at the front.
-    const fwC: [number, number, number] = [TP[0] + inches(3.3), TP[1] + inches(2.6), TP[2]];
-    const apex: [number, number, number] = [TP[0] - inches(0.5), TP[1] + inches(7.2), TP[2]];
+    // Turret base: ring plate with the big spur gear under it and a low U-cradle the hood nests into.
+    const tb = new THREE.Shape();
+    tb.absarc(0, 0, inches(5.6), 0, Math.PI * 2, false);
+    const bh = new THREE.Path();
+    bh.absarc(0, 0, inches(3.2), 0, Math.PI * 2, true);
+    tb.holes.push(bh);
+    const baseGeo = new THREE.ExtrudeGeometry(tb, { depth: inches(0.25), bevelEnabled: false, curveSegments: 40 });
+    baseGeo.rotateX(-Math.PI / 2);
+    baseGeo.translate(TP[0], TP[1] + inches(0.35), TP[2]);
+    kit.add(new THREE.Mesh(baseGeo, dark), 't_plate', turretG);
+    kit.cyl('t_gear', [TP[0], TP[1] - inches(0.2), TP[2]], inches(5.3), inches(0.28), 'y', mat(0x3a3d42, { metal: 0.6, rough: 0.35 }), turretG, 64);
     for (const s of [-1, 1]) {
-      const z = TP[2] + s * inches(2.6);
-      const tri = new THREE.Shape();
-      tri.moveTo(TP[0] - inches(4), TP[1] + inches(0.6));
-      tri.lineTo(TP[0] + inches(4.6), TP[1] + inches(0.6));
-      tri.lineTo(apex[0] + inches(1.2), apex[1]);
-      tri.lineTo(apex[0] - inches(1.2), apex[1]);
-      tri.closePath();
-      const hole = new THREE.Path();
-      hole.moveTo(TP[0] - inches(2.4), TP[1] + inches(1.5));
-      hole.lineTo(TP[0] + inches(2.6), TP[1] + inches(1.5));
-      hole.lineTo(apex[0], apex[1] - inches(1.6));
-      hole.closePath();
-      tri.holes.push(hole);
-      const tg = new THREE.ExtrudeGeometry(tri, { depth: inches(0.19), bevelEnabled: false });
-      tg.translate(0, 0, z - inches(0.095));
-      kit.add(new THREE.Mesh(tg, dark), `t_aframe_${s}`, turretG);
-      kit.belt(`t_belt_${s}`, [TP[0] - inches(3.2), TP[1] + inches(0.8)], [apex[0], apex[1]], z + s * inches(0.2), turretG);
-      kit.belt(`t_belt2_${s}`, [apex[0], apex[1]], [fwC[0], fwC[1]], z + s * inches(0.2), turretG);
-      kit.pulley(`t_apex_pulley_${s}`, [apex[0], apex[1], z + s * inches(0.3)], inches(0.9), { parent: turretG, color: 0x2a2c31 });
+      const z = TP[2] + s * inches(2.55);
+      const cr = new THREE.Shape();
+      cr.moveTo(TP[0] - inches(4.6), TP[1] + inches(0.6));
+      cr.lineTo(FW[0] + inches(1.6), TP[1] + inches(0.6));
+      cr.lineTo(FW[0] + inches(1.6), FW[1] + inches(0.4));
+      cr.absarc(FW[0], FW[1], inches(1.6), 0, Math.PI, false);
+      cr.lineTo(TP[0] - inches(4.6), FW[1] - inches(0.6));
+      cr.closePath();
+      const cg = new THREE.ExtrudeGeometry(cr, { depth: inches(0.19), bevelEnabled: false });
+      cg.translate(0, 0, z - inches(0.095));
+      kit.add(new THREE.Mesh(cg, dark), `t_cradle_${s}`, turretG);
     }
-    kit.cyl('t_apex_shaft', apex, inches(0.25), inches(6), 'z', M.steel(), turretG, 8);
-    const hoodRoller = kit.tubeRoller('t_hood_roller', apex[0], apex[1], TP[2] - inches(1.8), TP[2] + inches(1.8), inches(0.9), 0x1a1b1e, turretG);
-    const flyName = 't_flywheel';
-    const fly = kit.group(flyName, turretG);
-    kit.cyl('t_fly_body', fwC, inches(1.5), inches(3.4), 'z', mat(0x111213, { rough: 0.9 }), fly, 28);
-    for (const s of [-1, 1]) kit.pulley(`t_fly_hub_${s}`, [fwC[0], fwC[1], fwC[2] + s * inches(1.75)], inches(1.45), { parent: fly, t: inches(0.12), color: 0xc28a50, spokes: 6 });
-    // Hood (moving) — curved shell over the flywheel.
-    const hoodPivot: [number, number, number] = [TP[0] + inches(1), TP[1] + inches(5.6), TP[2]];
+    // 4× Kraken X44 stacked on the flywheel axis outboard of the cradle, the turret X44 and the hood X44.
+    for (const s of [-1, 1]) for (let k = 0; k < 2; k++) kit.motor(`t_fly_x44_${s}${k}`, [FW[0] - inches(0.2), FW[1] - inches(0.4), TP[2] + s * inches(3.6 + k * 1.5)], 'z', turretG, true);
+    kit.motor('t_turret_x44', [TP[0] - inches(4), TP[1] - inches(1.4), TP[2] + inches(3.6)], 'y', turretG, true);
+    kit.motor('t_hood_x44', [TP[0] - inches(3.2), TP[1] + inches(1.4), TP[2] - inches(3.6)], 'z', turretG, true);
+    kit.sectorPlate('t_hood_sector', [FW[0], FW[1], TP[2] - inches(2.95)], inches(3.2), Math.PI * 0.55, Math.PI * 1.2, { parent: turretG, color: 0x9aa0a8, teeth: 20 });
+    // 3in flywheel: urethane stealth wheels with .25in copper mass disks.
+    const fly = kit.group('t_flywheel', turretG);
+    kit.cyl('t_fly_body', FW, inches(1.5), inches(4), 'z', mat(0x111213, { rough: 0.9 }), fly, 28);
+    for (const k of [-1.2, 0, 1.2]) kit.cyl('t_fly_copper', [FW[0], FW[1], FW[2] + k * inches(1)], inches(1.42), inches(0.25), 'z', M.copper(), fly, 28);
+    // Hood: two trussed arch side plates (A-frame), apex hood roller, GT2 belts up the legs.
     const hood = kit.group('t_hood', turretG);
-    for (let k = 0; k < 5; k++) {
-      const a = 0.9 - k * 0.32;
-      kit.box(`t_hood_seg${k}`, [fwC[0] + Math.cos(a) * inches(2.4), fwC[1] + Math.sin(a) * inches(2.4), TP[2]], [inches(1.2), inches(0.18), inches(3.6)], dark, hood, [0, 0, a - Math.PI / 2]);
+    const legF: [number, number] = [FW[0], FW[1]]; // front leg foot = the flywheel axis
+    const legB: [number, number] = [FW[0] - inches(6.4), FW[1] - inches(0.2)];
+    const apex: [number, number] = [FW[0] - inches(2.6), FW[1] + inches(6.2)];
+    for (const s of [-1, 1]) {
+      const z = TP[2] + s * inches(2.4);
+      const arch = new THREE.Shape();
+      const w = inches(0.75);
+      arch.moveTo(legB[0] - w / 2, legB[1]);
+      arch.quadraticCurveTo(legB[0] - inches(0.6), apex[1] + inches(0.4), apex[0], apex[1] + w);
+      arch.quadraticCurveTo(legF[0] + inches(1.3), apex[1] + inches(0.4), legF[0] + w, legF[1]);
+      arch.lineTo(legF[0] - w / 2, legF[1]);
+      arch.quadraticCurveTo(legF[0] + inches(0.2), apex[1] - inches(1.4), apex[0], apex[1] - inches(0.5));
+      arch.quadraticCurveTo(legB[0] + inches(0.6), apex[1] - inches(1.4), legB[0] + w / 2, legB[1]);
+      arch.closePath();
+      const ag = new THREE.ExtrudeGeometry(arch, { depth: inches(0.125), bevelEnabled: false, curveSegments: 14 });
+      ag.translate(0, 0, z - inches(0.06));
+      kit.add(new THREE.Mesh(ag, dark), `t_aframe_${s}`, hood);
+      // Truss webbing inside the arch.
+      for (let k = 0; k < 4; k++) {
+        const u = (k + 0.5) / 4;
+        const px = legB[0] + (legF[0] - legB[0]) * u;
+        const py = legB[1] + Math.sin(u * Math.PI) * (apex[1] - legB[1]) * 0.78;
+        kit.box(`t_web_${s}${k}`, [px, (py + legB[1]) / 2 + inches(0.3), z], [inches(0.22), py - legB[1], inches(0.12)], dark, hood, [0, 0, (k % 2 ? 1 : -1) * 0.5]);
+      }
+      kit.belt(`t_belt_f_${s}`, [legF[0], legF[1]], [apex[0], apex[1]], z + s * inches(0.18), hood);
+      kit.belt(`t_belt_b_${s}`, [legB[0], legB[1]], [apex[0], apex[1]], z + s * inches(0.18), hood);
+      kit.pulley(`t_apex_pulley_${s}`, [apex[0], apex[1], z + s * inches(0.28)], inches(0.75), { parent: hood, color: 0x2a2c31, spokes: 3 });
+      kit.pulley(`t_back_pulley_${s}`, [legB[0], legB[1], z + s * inches(0.28)], inches(0.6), { parent: hood, color: 0x2a2c31 });
     }
-    kit.camera('t_camera', [TP[0] + inches(5), TP[1] + inches(1.5), TP[2] + inches(3.5)], 0, turretG);
-    kit.box('cable_chain', [TP[0] - inches(5.5), TP[1] - inches(0.5), TP[2] + inches(3)], [inches(1), inches(0.8), inches(6)], M.black(), undefined, [0, 0.6, 0]);
+    kit.cyl('t_apex_shaft', [apex[0], apex[1], TP[2]], inches(0.25), inches(5.4), 'z', M.steel(), hood, 8);
+    const hoodRoller = kit.tubeRoller('t_hood_roller', apex[0], apex[1], TP[2] - inches(2), TP[2] + inches(2), inches(0.9), 0x1a1b1e, hood);
+    kit.cyl('t_back_shaft', [legB[0], legB[1], TP[2]], inches(0.25), inches(5.4), 'z', M.steel(), hood, 8);
+    // Sushi-wheel feeder (3× 1in) up the back of the chute, and the turret Limelight on the base.
+    for (let k = 0; k < 3; k++) kit.cyl(`t_sushi_${k}`, [TP[0] + inches(1.2), TP[1] + inches(0.9) + k * inches(0.05), TP[2] - inches(1.2) + k * inches(1.2)], inches(0.5), inches(0.7), 'z', mat(0x2a8a4a, { rough: 0.6 }), turretG, 12);
+    kit.camera('t_camera', [TP[0] - inches(4.4), TP[1] + inches(1.4), TP[2] + inches(2.2)], Math.PI, turretG);
+    // Cable chain from the turret base to the wall, on its constant-force-spring flex-wheel tensioner.
+    kit.box('cable_chain', [TP[0] - inches(5.5), TP[1] - inches(0.9), TP[2] + inches(3)], [inches(1), inches(0.8), inches(6)], M.black(), undefined, [0, 0.6, 0]);
+    kit.cyl('cable_tensioner', [TP[0] - inches(7.5), TP[1] - inches(0.9), TP[2] + inches(5.5)], inches(0.8), inches(0.6), 'y', mat(0x2a2c31, { rough: 0.6 }), undefined, 16);
+
+    // ---------- hopper net (binder: "100+ with net over the bump"): over the hopper ahead of the turret, under the rim.
+    const netX0 = TP[0] + inches(7.6);
+    const netX1 = L / 2 + inches(3.2);
+    kit.box('hopper_net_top', [(netX0 + netX1) / 2, wallTop - inches(0.2), 0], [netX1 - netX0, 0.003, W - inches(0.6)], M.net());
 
     // ---------- battery at the very left edge (split rail), cameras, LEDs
     kit.box('battery_lead_pos', [-inches(4), y0 + inches(8), -W / 2 + inches(4)], [inches(6), inches(0.4), inches(0.4)], mat(0xd02020));
@@ -339,11 +410,13 @@ export const r4414: BuiltinRobot = {
     rig.joint({ id: 'carriage', type: 'prismatic', driver: 'intake-deploy', parent: 'slide', pivot: [0, 0, 0], axis: [0, 1, 0], stowed: 0, active: -LIFT, speed: 0.7 }, drop);
     rig.joint({ id: 'rotor', type: 'spin', driver: 'indexer', pivot: [ROTOR[0], 0, ROTOR[2]], axis: [0, 1, 0], speed: 810 }, rotor);
     rig.joint({ id: 'turret', type: 'revolute', driver: 'turret', pivot: TP, axis: [0, 1, 0], speed: 540 }, turretG);
-    rig.joint({ id: 'hood', type: 'revolute', driver: 'hood', parent: 'turret', pivot: hoodPivot, axis: [0, 0, 1], stowed: 0, active: -18, speed: 200 }, hood);
-    rig.joint({ id: 'flywheel', type: 'spin', driver: 'shooter-wheel', parent: 'turret', pivot: fwC, axis: [0, 0, -1], speed: 4200 }, fly);
-    rig.joint({ id: 'hood_roller', type: 'spin', driver: 'shooter-wheel', parent: 'turret', pivot: apex, axis: [0, 0, 1], speed: 3000 }, hoodRoller);
+    // Hood joint: 0 = the modeled 60° pose; +folds back into the base. Launch 45°→76° maps to +10°→−10.7°.
+    const sh = r4414.def.shooter!;
+    rig.joint({ id: 'hood', type: 'revolute', driver: 'hood', parent: 'turret', pivot: FW, axis: [0, 0, 1], stowed: (60 - sh.hoodMin!) * HOOD_K, active: (60 - sh.hoodMax!) * HOOD_K, speed: 300 }, hood);
+    rig.joint({ id: 'flywheel', type: 'spin', driver: 'shooter-wheel', parent: 'turret', pivot: FW, axis: [0, 0, -1], speed: 4200 }, fly);
+    rig.joint({ id: 'hood_roller', type: 'spin', driver: 'shooter-wheel', parent: 'hood', pivot: [apex[0], apex[1], TP[2]], axis: [0, 0, 1], speed: 3000 }, hoodRoller);
 
-    const exit: [number, number, number] = [fwC[0] + inches(3), fwC[1] + inches(1.6), TP[2]];
+    const exit: [number, number, number] = [FW[0] + inches(1.2), FW[1] + inches(2.4), TP[2]];
     const shooter = { ...r4414.def.shooter!, barrels: [{ exit, pivot: TP }] };
     const zones = [{ center: [mainC[0] + inches(1.2), inches(3), 0] as [number, number, number], size: [inches(6), inches(6), W] as [number, number, number] }];
     return { model: kit.root, joints: rig.joints, parts: rig.parts, patch: { shooter, intake: { ...r4414.def.intake!, zones } } };
